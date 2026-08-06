@@ -112,10 +112,12 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 
 The dashboard can be hosted on Vercel while the API stays elsewhere (Railway, VPS, tunnel).
 
-**Live project (example):** link your `apps/web` folder / set Root Directory to `apps/web`.
+**Current beta URLs**
+- Web: `https://jobscan-web.vercel.app`
+- API: `https://api-production-8ea6.up.railway.app`
 
 1. In Vercel → Project → Settings → Environment Variables:
-   - `VITE_API_URL` = your **public** API base URL (e.g. `https://api.yourdomain.com`)  
+   - `VITE_API_URL` = your **public** API base URL (e.g. `https://api-production-8ea6.up.railway.app`)  
      Must be set at **build** time (Vite bakes it in).
 2. Redeploy after changing `VITE_API_URL`.
 3. On the API, set `CORS_ORIGINS` to your Vercel URL (e.g. `https://jobscan-web.vercel.app`).
@@ -123,6 +125,12 @@ The dashboard can be hosted on Vercel while the API stays elsewhere (Railway, VP
 Without a public API, the Vercel site loads but login/API calls will fail (they cannot reach your laptop `localhost`).
 
 SPA routing: [`apps/web/vercel.json`](../apps/web/vercel.json) rewrites all paths to `index.html`.
+
+### Railway backend notes
+- Project services: `api`, `Postgres`, `Redis`, `celery-worker`, `celery-beat`
+- Same Docker image (`deploy/Dockerfile.api`); set `SERVICE_ROLE=api|worker|beat`
+- Do **not** put a global `/health` check on worker/beat in `railway.toml`
+- `GOOGLE_API_KEY` + SMTP should be set on Railway for parse/score/email
 
 ---
 
