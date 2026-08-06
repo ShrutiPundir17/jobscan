@@ -108,6 +108,24 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 - WhatsApp Business (templates) is a separate Twilio upgrade; not required for UI beta
 - Auto-apply is not deployed — Apply marks tracking and opens the employer JD
 
+## Frontend on Vercel (UI only)
+
+The dashboard can be hosted on Vercel while the API stays elsewhere (Railway, VPS, tunnel).
+
+**Live project (example):** link your `apps/web` folder / set Root Directory to `apps/web`.
+
+1. In Vercel → Project → Settings → Environment Variables:
+   - `VITE_API_URL` = your **public** API base URL (e.g. `https://api.yourdomain.com`)  
+     Must be set at **build** time (Vite bakes it in).
+2. Redeploy after changing `VITE_API_URL`.
+3. On the API, set `CORS_ORIGINS` to your Vercel URL (e.g. `https://jobscan-web.vercel.app`).
+
+Without a public API, the Vercel site loads but login/API calls will fail (they cannot reach your laptop `localhost`).
+
+SPA routing: [`apps/web/vercel.json`](../apps/web/vercel.json) rewrites all paths to `index.html`.
+
+---
+
 ## Fallback: laptop tunnel (demo only)
 
 PC must stay awake; URL dies when you sleep or close the tunnel.
