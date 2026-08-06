@@ -1,0 +1,185 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: jobagent-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-jobagent}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-jobagent}
+      POSTGRES_DB: ${POSTGRES_DB:-jobagent}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-jobagent} -d ${POSTGRES_DB:-jobagent}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: jobagent-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: jobagent-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-jobagent}:${POSTGRES_PASSWORD:-jobagent}@postgres:5432/${POSTGRES_DB:-jobagent}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-001}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173,http://127.0.0.1:5173}
+      SCANNER_ENABLED: ${SCANNER_ENABLED:-true}
+      SCANNER_KEYWORDS: ${SCANNER_KEYWORDS:-python developer}
+      SCANNER_LOCATIONS: ${SCANNER_LOCATIONS:-bangalore}
+      SCANNER_PORTALS: ${SCANNER_PORTALS:-naukri,linkedin,internshala,foundit,unstop}
+      SCANNER_MAX_PAGES: ${SCANNER_MAX_PAGES:-1}
+      SCANNER_HEADLESS: ${SCANNER_HEADLESS:-true}
+      SCANNER_BROWSER_CHANNEL: ${SCANNER_BROWSER_CHANNEL:-}
+      MATCH_VECTOR_LIMIT: ${MATCH_VECTOR_LIMIT:-50}
+      MATCH_MIN_SIMILARITY: ${MATCH_MIN_SIMILARITY:-0.35}
+      EMBED_JOBS_BATCH_SIZE: ${EMBED_JOBS_BATCH_SIZE:-40}
+      MATCH_DEEP_SCORE_LIMIT: ${MATCH_DEEP_SCORE_LIMIT:-10}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-JobAgent}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
+      PYTHONPATH: /job-scanner:/app
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ./apps/api:/app
+      - ./workers/job-scanner:/job-scanner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  celery-worker:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: jobagent-celery-worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-jobagent}:${POSTGRES_PASSWORD:-jobagent}@postgres:5432/${POSTGRES_DB:-jobagent}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-flash-latest}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-gemini-embedding-001}
+      EMBEDDING_DIMENSIONS: ${EMBEDDING_DIMENSIONS:-768}
+      SCANNER_ENABLED: ${SCANNER_ENABLED:-true}
+      SCANNER_KEYWORDS: ${SCANNER_KEYWORDS:-python developer}
+      SCANNER_LOCATIONS: ${SCANNER_LOCATIONS:-bangalore}
+      SCANNER_PORTALS: ${SCANNER_PORTALS:-naukri,linkedin,internshala,foundit,unstop}
+      SCANNER_MAX_PAGES: ${SCANNER_MAX_PAGES:-1}
+      SCANNER_HEADLESS: ${SCANNER_HEADLESS:-true}
+      SCANNER_BROWSER_CHANNEL: ${SCANNER_BROWSER_CHANNEL:-}
+      MATCH_VECTOR_LIMIT: ${MATCH_VECTOR_LIMIT:-50}
+      MATCH_MIN_SIMILARITY: ${MATCH_MIN_SIMILARITY:-0.35}
+      EMBED_JOBS_BATCH_SIZE: ${EMBED_JOBS_BATCH_SIZE:-40}
+      MATCH_DEEP_SCORE_LIMIT: ${MATCH_DEEP_SCORE_LIMIT:-10}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-JobAgent}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID:-}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
+      TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
+      PYTHONPATH: /job-scanner:/app
+    volumes:
+      - ./apps/api:/app
+      - ./workers/job-scanner:/job-scanner
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+    # Installs Chromium on first boot if needed, then runs the worker
+    command: ["sh", "/app/scripts/celery_worker.sh"]
+
+  celery-beat:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: jobagent-celery-beat
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-jobagent}:${POSTGRES_PASSWORD:-jobagent}@postgres:5432/${POSTGRES_DB:-jobagent}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      PYTHONPATH: /job-scanner:/app
+    volumes:
+      - ./apps/api:/app
+      - ./workers/job-scanner:/job-scanner
+    depends_on:
+      redis:
+        condition: service_healthy
+      celery-worker:
+        condition: service_started
+    command: celery -A app.celery_app.celery beat --loglevel=info
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: development
+    container_name: jobagent-web
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    ports:
+      - "${WEB_PORT:-5173}:5173"
+    volumes:
+      - ./apps/web:/app
+      - web_node_modules:/app/node_modules
+    depends_on:
+      - backend
+    command: npm run dev -- --host 0.0.0.0 --port 5173
+
+volumes:
+  postgres_data:
+  redis_data:
+  web_node_modules:

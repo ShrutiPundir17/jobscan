@@ -1,0 +1,108 @@
+# Production overlay — use with base compose:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Requires DOMAIN, JWT_SECRET_KEY, POSTGRES_PASSWORD, GOOGLE_API_KEY in .env
+# See docs/deploy.md
+
+services:
+  postgres:
+    ports: !reset []
+    restart: always
+
+  redis:
+    ports: !reset []
+    restart: always
+
+  backend:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: jobagent-api:prod
+    ports: !reset []
+    volumes: !override
+      - backend_uploads:/app/uploads
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RUN_MIGRATIONS: "1"
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--proxy-headers",
+        "--forwarded-allow-ips=*",
+      ]
+    restart: always
+
+  celery-worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: jobagent-api:prod
+    volumes: !override
+      - backend_uploads:/app/uploads
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RUN_MIGRATIONS: "0"
+      APP_PUBLIC_URL: ${APP_PUBLIC_URL}
+    entrypoint: ["/api_entrypoint.sh"]
+    command: ["sh", "/app/scripts/celery_worker.sh"]
+    restart: always
+
+  celery-beat:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    image: jobagent-api:prod
+    volumes: !override []
+    environment:
+      APP_ENV: production
+      DEBUG: "false"
+      RUN_MIGRATIONS: "0"
+    entrypoint: ["/api_entrypoint.sh"]
+    command: ["celery", "-A", "app.celery_app.celery", "beat", "--loglevel=info"]
+    restart: always
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+      args:
+        # Same-origin via Caddy — browser calls https://$DOMAIN/api/...
+        VITE_API_URL: ${VITE_API_URL:-/api}
+    image: jobagent-web:prod
+    ports: !reset []
+    volumes: !override []
+    environment: !override {}
+    command: ["nginx", "-g", "daemon off;"]
+    restart: always
+
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: jobagent-caddy
+    restart: always
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      DOMAIN: ${DOMAIN:?Set DOMAIN to your public hostname, e.g. jobagent.example.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+      - web
+
+volumes:
+  backend_uploads:
+  caddy_data:
+  caddy_config:

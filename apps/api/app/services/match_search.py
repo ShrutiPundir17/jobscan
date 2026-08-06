@@ -1,0 +1,156 @@
+"""
+Stage 1 — fast embedding similarity pre-filter.
+
+Uses stored resume + job vectors (pgvector HNSW / cosine) so search stays
+milliseconds and avoids an LLM call. Stage 2 will deep-score the shortlist.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from uuid import UUID
+
+from fastapi import HTTPException, status
+from sqlalchemy import Select, or_, select
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.models import Job, Resume, User
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class MatchCandidate:
+    job: Job
+    similarity: float  # 0.0 – 1.0 (cosine similarity)
+    score: int  # 0 – 100
+
+
+def resolve_resume_for_match(
+    db: Session,
+    user: User,
+    *,
+    resume_id: UUID | None = None,
+) -> Resume:
+    if resume_id is not None:
+        resume = db.scalar(
+            select(Resume).where(Resume.id == resume_id, Resume.user_id == user.id)
+        )
+        if resume is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Resume not found")
+    else:
+        resume = db.scalar(
+            select(Resume)
+            .where(Resume.user_id == user.id, Resume.is_primary.is_(True))
+            .order_by(Resume.updated_at.desc())
+        )
+        if resume is None:
+            resume = db.scalar(
+                select(Resume)
+                .where(Resume.user_id == user.id)
+                .order_by(Resume.updated_at.desc())
+                .limit(1)
+            )
+        if resume is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Upload and embed a resume before searching for matches.",
+            )
+
+    if resume.embedding is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resume has no embedding. Call POST /resumes/{id}/embed first.",
+        )
+    return resume
+
+
+def _apply_preference_filters(stmt: Select, user: User) -> Select:
+    """Soft location filter from user preferences (keeps remote / India-wide)."""
+    locations = user.preferred_locations or []
+    if not isinstance(locations, list) or not locations:
+        return stmt
+
+    clauses = []
+    for loc in locations:
+        text = str(loc).strip()
+        if not text:
+            continue
+        clauses.append(Job.location.ilike(f"%{text}%"))
+
+    if not clauses:
+        return stmt
+
+    clauses.extend(
+        [
+            Job.location.is_(None),
+            Job.location.ilike("%remote%"),
+            Job.location.ilike("%work from home%"),
+            Job.location.ilike("%anywhere%"),
+            Job.location.ilike("%india%"),
+        ]
+    )
+    return stmt.where(or_(*clauses))
+
+
+def search_similar_jobs(
+    db: Session,
+    resume: Resume,
+    user: User,
+    *,
+    limit: int | None = None,
+    min_similarity: float | None = None,
+    apply_location_prefs: bool = True,
+) -> list[MatchCandidate]:
+    """
+    Rank jobs by cosine similarity to the resume embedding.
+
+    Returns up to `limit` candidates with similarity >= `min_similarity`.
+    """
+    if resume.embedding is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Resume has no embedding.",
+        )
+
+    top_k = max(1, min(limit or settings.match_vector_limit, 200))
+    floor = (
+        min_similarity
+        if min_similarity is not None
+        else float(settings.match_min_similarity)
+    )
+    floor = max(0.0, min(1.0, floor))
+
+    vector = list(resume.embedding)
+    distance = Job.embedding.cosine_distance(vector)
+    similarity_expr = (1 - distance).label("similarity")
+
+    stmt = (
+        select(Job, similarity_expr)
+        .where(Job.embedding.is_not(None))
+        .order_by(distance)
+        .limit(top_k)
+    )
+    if apply_location_prefs:
+        stmt = _apply_preference_filters(stmt, user)
+
+    rows = db.execute(stmt).all()
+    candidates: list[MatchCandidate] = []
+    for job, similarity in rows:
+        sim = float(similarity or 0.0)
+        if sim < floor:
+            continue
+        score = max(0, min(100, int(round(sim * 100))))
+        candidates.append(MatchCandidate(job=job, similarity=sim, score=score))
+
+    logger.info(
+        "match_search user=%s resume=%s candidates=%s limit=%s floor=%.2f",
+        user.id,
+        resume.id,
+        len(candidates),
+        top_k,
+        floor,
+    )
+    return candidates

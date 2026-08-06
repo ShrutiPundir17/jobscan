@@ -1,0 +1,22 @@
+# Public HTTPS edge for JobAgent.
+# Set DOMAIN in .env (e.g. jobagent.example.com). Caddy obtains Let's Encrypt certs automatically.
+# Same-origin API: https://$DOMAIN/api/* → backend (prefix stripped).
+
+{$DOMAIN:localhost} {
+	encode gzip
+
+	# Health check (no /api prefix)
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	# API — strip /api so FastAPI routes stay /auth, /matches, …
+	handle_path /api/* {
+		reverse_proxy backend:8000
+	}
+
+	# Static web (nginx in web service)
+	handle {
+		reverse_proxy web:80
+	}
+}

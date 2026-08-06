@@ -1,0 +1,44 @@
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH=/job-scanner:/app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        curl \
+        # Playwright Chromium runtime deps (job scanner)
+        libnss3 \
+        libnspr4 \
+        libatk1.0-0 \
+        libatk-bridge2.0-0 \
+        libcups2 \
+        libdrm2 \
+        libdbus-1-3 \
+        libxkbcommon0 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libgbm1 \
+        libasound2 \
+        libpango-1.0-0 \
+        libcairo2 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY apps/api/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt \
+    && playwright install chromium
+
+COPY apps/api /app
+COPY workers/job-scanner /job-scanner
+COPY deploy/api_entrypoint.sh /api_entrypoint.sh
+RUN sed -i 's/\r$//' /api_entrypoint.sh /app/scripts/celery_worker.sh \
+    && chmod +x /api_entrypoint.sh /app/scripts/celery_worker.sh
+
+EXPOSE 8000
+
+ENTRYPOINT ["/api_entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]

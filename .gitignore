@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.Python
+
+# Build / output
+dist/
+build/
+.next/
+out/
+coverage/
+*.egg-info/
+.turbo/
+.cache/
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs & runtime
+logs/
+*.log
+tmp/
+temp/
+uploads/
+*.pid
+
+# Test / local data
+*.sqlite
+*.db
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Misc
+*.local
+.cursor/
+workers/job-scanner/_debug/
+
+# Celery beat runtime
+celerybeat-schedule
+celerybeat-schedule.*
