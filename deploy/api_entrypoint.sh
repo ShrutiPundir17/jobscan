@@ -38,6 +38,17 @@ fi
 if [ "${RUN_MIGRATIONS:-1}" = "1" ]; then
   echo "Running alembic upgrade head..."
   alembic upgrade head
+  echo "Backfilling missing job locations..."
+  python - <<'PY'
+from app.db import SessionLocal
+from app.services.job_location_backfill import backfill_missing_job_locations
+db = SessionLocal()
+try:
+    n = backfill_missing_job_locations(db, limit=2000)
+    print(f"location_backfill updated={n}")
+finally:
+    db.close()
+PY
 fi
 
 exec "$@"

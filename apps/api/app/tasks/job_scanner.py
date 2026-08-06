@@ -130,6 +130,18 @@ async def _run_scan(
                         headless=headless,
                         browser_channel=channel,
                     )
+                    # Portals often omit location on cards — stamp the search city
+                    # so preferred-location matching actually works.
+                    for job in jobs:
+                        if location and not (getattr(job, "location", None) or "").strip():
+                            job.location = str(location).strip().title()
+                        raw = getattr(job, "raw_payload", None)
+                        if not isinstance(raw, dict):
+                            raw = {}
+                            job.raw_payload = raw
+                        if location:
+                            raw["search_location"] = str(location).strip()
+                        raw["search_keyword"] = keyword
                     all_jobs.extend(jobs)
                     portal_count += len(jobs)
                     logger.info(

@@ -160,10 +160,19 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
       </div>
 
       {items.length === 0 ? (
-        <p className="muted">
-          No matches yet. Upload + parse a resume, then hit <strong>Find matches</strong> (or scan
-          jobs first if the board is empty).
-        </p>
+        <div className="muted" style={{ display: "grid", gap: "0.55rem" }}>
+          <p style={{ margin: 0 }}>
+            No matches for your current preferred locations yet.
+          </p>
+          <p style={{ margin: 0 }}>
+            1) On <strong>Profile</strong>, add <strong>Target roles</strong> (e.g. Software
+            Engineer) and save.
+            <br />
+            2) Click <strong>Scan jobs</strong> here (uses your cities) and wait ~1–2 minutes.
+            <br />
+            3) Click <strong>Find matches</strong> again.
+          </p>
+        </div>
       ) : (
         <div className="match-list">
           {items.map((m) => {

@@ -86,7 +86,13 @@ def upsert_scraped_jobs(db: Session, jobs: list[Any]) -> dict[str, int]:
             existing.title = payload["title"]
             existing.company = payload["company"]
             existing.url = payload["url"]
-            existing.location = payload["location"]
+            # Never wipe a known city with a blank scrape field.
+            if payload["location"]:
+                existing.location = payload["location"]
+            elif not existing.location:
+                search_loc = (payload["raw_payload"] or {}).get("search_location")
+                if search_loc:
+                    existing.location = str(search_loc).strip().title()[:255]
             if payload["description"]:
                 existing.description = payload["description"]
             existing.employment_type = payload["employment_type"]
@@ -95,7 +101,9 @@ def upsert_scraped_jobs(db: Session, jobs: list[Any]) -> dict[str, int]:
             existing.currency = payload["currency"]
             if payload["posted_at"] is not None:
                 existing.posted_at = payload["posted_at"]
-            existing.raw_payload = payload["raw_payload"]
+            merged_raw = dict(existing.raw_payload or {})
+            merged_raw.update(payload["raw_payload"] or {})
+            existing.raw_payload = merged_raw
             if content_changed:
                 clear_job_embedding(existing)
             updated += 1

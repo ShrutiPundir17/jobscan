@@ -102,6 +102,8 @@ def location_preference_clauses(user: User) -> list:
 
     clauses = []
     wants_remote = False
+    # JSONB text extract: raw_payload->>'search_location'
+    search_loc = Job.raw_payload["search_location"].as_string()
     for loc in locations:
         text = str(loc).strip()
         if not text:
@@ -111,6 +113,8 @@ def location_preference_clauses(user: User) -> list:
             wants_remote = True
         for alias in _location_aliases(text):
             clauses.append(Job.location.ilike(f"%{alias}%"))
+            # Jobs scraped for this city even if card location was blank.
+            clauses.append(search_loc.ilike(f"%{alias}%"))
 
     if wants_remote:
         clauses.extend(
