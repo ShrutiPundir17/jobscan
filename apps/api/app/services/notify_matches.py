@@ -230,6 +230,12 @@ def _delivery_hint(email_status: str, whatsapp_status: str) -> str:
         parts.append(f"Email {email_status}.")
     elif email_status == "sent":
         parts.append("Email sent.")
+    elif email_status in {"failed:timeout", "failed:network"}:
+        parts.append(
+            "Email failed: Gmail SMTP is blocked from this cloud host. "
+            "Add RESEND_API_KEY (https://resend.com) on the API service, set "
+            "SMTP_FROM_EMAIL=onboarding@resend.dev, and redeploy."
+        )
     elif email_status.startswith("failed"):
         parts.append(f"Email failed ({email_status}).")
 

@@ -12,6 +12,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [scoring, setScoring] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -37,21 +38,28 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     setScoring(true);
     onMessage(null);
     onError(null);
+    onMessage("Scoring matches with Gemini — this can take 1–3 minutes. Keep this tab open…");
     try {
-      const res = await api.scoreMatches({ limit: 15, persist: true });
+      const res = await api.scoreMatches({ limit: 10, persist: true });
       onMessage(
         `Scored ${res.count} roles — saved ${res.persisted_count} matches (min ${res.min_match_score}).`,
       );
       await load();
     } catch (err) {
-      onError(err instanceof Error ? err.message : "Match scoring failed");
+      const msg = err instanceof Error ? err.message : "Match scoring failed";
+      onError(
+        /abort|timeout|failed to fetch|network/i.test(msg)
+          ? "Find matches timed out or lost connection. Gemini may be busy — wait a minute and try again."
+          : msg,
+      );
+      onMessage(null);
     } finally {
       setScoring(false);
     }
   }
 
   async function scanJobs() {
-    setScoring(true);
+    setScanning(true);
     onMessage(null);
     onError(null);
     try {
@@ -61,7 +69,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     } catch (err) {
       onError(err instanceof Error ? err.message : "Scan failed");
     } finally {
-      setScoring(false);
+      setScanning(false);
     }
   }
 
@@ -128,13 +136,18 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
           </p>
         </div>
         <div className="row" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="btn btn-soft" disabled={scoring} onClick={() => void scanJobs()}>
-            {scoring ? "Working…" : "Scan jobs"}
+          <button
+            type="button"
+            className="btn btn-soft"
+            disabled={scanning || scoring}
+            onClick={() => void scanJobs()}
+          >
+            {scanning ? "Scanning…" : "Scan jobs"}
           </button>
           <button
             type="button"
             className="btn btn-primary"
-            disabled={scoring}
+            disabled={scoring || scanning}
             onClick={() => void findMatches()}
           >
             {scoring ? "Scoring…" : "Find matches"}

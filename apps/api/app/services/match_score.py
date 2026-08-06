@@ -154,22 +154,46 @@ def _parse_score_payload(raw: str) -> dict[str, Any]:
 
 
 def score_job_with_llm(resume: Resume, job: Job) -> dict[str, Any]:
+    import time
+
     client = _require_gemini_client()
     prompt = _build_score_prompt(resume, job)
-    try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config={
-                "temperature": 0.2,
-                "response_mime_type": "application/json",
-            },
-        )
-    except Exception as exc:  # noqa: BLE001
+    last_exc: Exception | None = None
+    response = None
+    # Gemini often returns 503 under load — retry a few times before skipping the job.
+    for attempt in range(4):
+        try:
+            response = client.models.generate_content(
+                model=settings.gemini_model,
+                contents=prompt,
+                config={
+                    "temperature": 0.2,
+                    "response_mime_type": "application/json",
+                },
+            )
+            break
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+            msg = str(exc)
+            retryable = (
+                "503" in msg
+                or "UNAVAILABLE" in msg
+                or "high demand" in msg.lower()
+                or "429" in msg
+                or "RESOURCE_EXHAUSTED" in msg
+            )
+            if retryable and attempt < 3:
+                time.sleep(1.5 * (2**attempt))
+                continue
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Gemini match scoring failed: {exc}",
+            ) from exc
+    else:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini match scoring failed: {exc}",
-        ) from exc
+            detail=f"Gemini match scoring failed: {last_exc}",
+        )
 
     content = getattr(response, "text", None)
     try:
