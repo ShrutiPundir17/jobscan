@@ -20,7 +20,7 @@ export default function App() {
   return (
     <div className="app-shell">
       <nav className="app-nav" aria-label="Main">
-        <p className="brand" style={{ margin: 0 }}>
+        <p className="brand brand-nav">
           Job<span>Agent</span>
         </p>
         <div className="app-nav-tabs">
@@ -61,10 +61,7 @@ export default function App() {
       {tab !== "profile" && message ? <div className="flash success fade-in">{message}</div> : null}
 
       {tab === "profile" ? (
-        <ProfileDashboard
-          onLogout={() => setAuthed(false)}
-          hideChrome
-        />
+        <ProfileDashboard onLogout={() => setAuthed(false)} hideChrome />
       ) : null}
       {tab === "matches" ? (
         <MatchesDashboard onMessage={setMessage} onError={setError} />
