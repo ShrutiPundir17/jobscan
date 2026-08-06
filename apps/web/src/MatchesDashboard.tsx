@@ -38,7 +38,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     onMessage(null);
     onError(null);
     try {
-      const res = await api.scoreMatches({ limit: 5, persist: true });
+      const res = await api.scoreMatches({ limit: 15, persist: true });
       onMessage(
         `Scored ${res.count} roles — saved ${res.persisted_count} matches (min ${res.min_match_score}).`,
       );

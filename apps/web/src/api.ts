@@ -179,7 +179,7 @@ export const api = {
     }>("/matches/score", {
       method: "POST",
       body: JSON.stringify({
-        limit: body.limit ?? 5,
+        limit: body.limit ?? 15,
         persist: body.persist ?? true,
         min_similarity: body.min_similarity ?? 0.3,
         apply_location_prefs: body.apply_location_prefs ?? false,
