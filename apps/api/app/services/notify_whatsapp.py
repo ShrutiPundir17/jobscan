@@ -78,4 +78,9 @@ def send_whatsapp(*, to_phone: str, body: str) -> str:
         return "sent"
     except Exception as exc:  # noqa: BLE001
         logger.exception("whatsapp_failed to=%s", to_phone)
-        return f"failed:{exc}"
+        msg = str(exc)
+        if "101" in msg or "unreachable" in msg.lower():
+            return "failed:network"
+        if "timed out" in msg.lower():
+            return "failed:timeout"
+        return f"failed:{type(exc).__name__}"[:120]

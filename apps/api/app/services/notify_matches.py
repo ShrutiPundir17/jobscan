@@ -116,8 +116,8 @@ def deliver_notification(db: Session, notification_id: UUID) -> dict[str, str]:
     else:
         whatsapp_status = "skipped:disabled"
 
-    note.email_status = email_status
-    note.whatsapp_status = whatsapp_status
+    note.email_status = (email_status or "")[:128]
+    note.whatsapp_status = (whatsapp_status or "")[:128]
     db.add(note)
     db.commit()
     return {"email": email_status, "whatsapp": whatsapp_status}

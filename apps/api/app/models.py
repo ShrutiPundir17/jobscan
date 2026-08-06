@@ -226,7 +226,7 @@ class Notification(Base, TimestampMixin):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     payload: Mapped[dict | None] = mapped_column(JSONB)
     read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), index=True)
-    email_status: Mapped[str | None] = mapped_column(String(32))
-    whatsapp_status: Mapped[str | None] = mapped_column(String(32))
+    email_status: Mapped[str | None] = mapped_column(String(128))
+    whatsapp_status: Mapped[str | None] = mapped_column(String(128))
 
     user: Mapped["User"] = relationship(back_populates="notifications")
