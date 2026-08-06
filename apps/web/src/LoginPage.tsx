@@ -63,102 +63,113 @@ export function LoginPage({ onLoggedIn }: Props) {
 
   return (
     <div className="login-page">
-      <div className="login-atmosphere" aria-hidden>
-        <div className="login-scanline" />
-        <div className="login-orb login-orb-a" />
-        <div className="login-orb login-orb-b" />
-      </div>
-
-      <div className="login-stage">
-        <header className="login-hero">
-          <p className="brand brand-hero">
+      <div className="login-frame">
+        <aside className="login-brand-rail" aria-label="JobAgent">
+          <p className="brand brand-rail-mark">
             Job<span>Agent</span>
           </p>
-          <p className="login-tagline">Hunt while you sleep.</p>
-        </header>
-
-        <form className="login-form stack" onSubmit={handleSubmit}>
-          <p className="lede">
-            {mode === "login"
-              ? "Sign in — resume in, ranked roles out."
-              : "Create an account and start the match engine."}
+          <h1 className="login-rail-title">
+            Your search,
+            <br />
+            on autopilot.
+          </h1>
+          <p className="login-rail-copy">
+            Upload a resume. Get scored matches. Tailor and track applications in one place.
           </p>
+        </aside>
 
-          <div className="auth-tabs" role="tablist">
-            <button
-              type="button"
-              role="tab"
-              className={`auth-tab ${mode === "login" ? "active" : ""}`}
-              onClick={() => {
-                setMode("login");
-                setError(null);
-              }}
-            >
-              Sign in
-            </button>
-            <button
-              type="button"
-              role="tab"
-              className={`auth-tab ${mode === "signup" ? "active" : ""}`}
-              onClick={() => {
-                setMode("signup");
-                setError(null);
-              }}
-            >
-              Create account
-            </button>
-          </div>
+        <main className="login-main">
+          <form className="login-form stack" onSubmit={handleSubmit}>
+            <p className="brand brand-mobile-only">
+              Job<span>Agent</span>
+            </p>
+            <div className="login-form-head">
+              <h2 className="login-form-title">
+                {mode === "login" ? "Welcome back" : "Get started"}
+              </h2>
+              <p className="lede">
+                {mode === "login"
+                  ? "Sign in to continue your hunt."
+                  : "Create an account to start matching."}
+              </p>
+            </div>
 
-          {mode === "signup" ? (
+            <div className="auth-tabs" role="tablist">
+              <button
+                type="button"
+                role="tab"
+                className={`auth-tab ${mode === "login" ? "active" : ""}`}
+                onClick={() => {
+                  setMode("login");
+                  setError(null);
+                }}
+              >
+                Sign in
+              </button>
+              <button
+                type="button"
+                role="tab"
+                className={`auth-tab ${mode === "signup" ? "active" : ""}`}
+                onClick={() => {
+                  setMode("signup");
+                  setError(null);
+                }}
+              >
+                Create account
+              </button>
+            </div>
+
+            {mode === "signup" ? (
+              <label className="field">
+                Full name
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your name"
+                  autoComplete="name"
+                />
+              </label>
+            ) : null}
+
             <label className="field">
-              Full name
+              Email
               <input
-                type="text"
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Your name"
-                autoComplete="name"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@gmail.com"
+                required
+                autoComplete="email"
               />
             </label>
-          ) : null}
 
-          <label className="field">
-            Email
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@gmail.com"
-              required
-              autoComplete="email"
-            />
-          </label>
+            <label className="field">
+              Password
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
+                required
+                minLength={mode === "signup" ? 8 : 1}
+                autoComplete={mode === "signup" ? "new-password" : "current-password"}
+              />
+            </label>
 
-          <label className="field">
-            Password
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
-              required
-              minLength={mode === "signup" ? 8 : 1}
-              autoComplete={mode === "signup" ? "new-password" : "current-password"}
-            />
-          </label>
+            {error ? <div className="flash error">{error}</div> : null}
 
-          {error ? <div className="flash error">{error}</div> : null}
-
-          <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading
-              ? mode === "signup"
-                ? "Creating account…"
-                : "Signing in…"
-              : mode === "signup"
-                ? "Create account"
-                : "Sign in"}
-          </button>
-        </form>
+            <button className="btn btn-primary btn-block" type="submit" disabled={loading}>
+              {loading
+                ? mode === "signup"
+                  ? "Creating account…"
+                  : "Signing in…"
+                : mode === "signup"
+                  ? "Create account"
+                  : "Sign in"}
+            </button>
+          </form>
+        </main>
       </div>
     </div>
   );
