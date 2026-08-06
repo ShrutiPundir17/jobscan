@@ -35,10 +35,11 @@ RUN pip install --no-cache-dir -r requirements.txt \
 COPY apps/api /app
 COPY workers/job-scanner /job-scanner
 COPY deploy/api_entrypoint.sh /api_entrypoint.sh
-RUN sed -i 's/\r$//' /api_entrypoint.sh /app/scripts/celery_worker.sh \
-    && chmod +x /api_entrypoint.sh /app/scripts/celery_worker.sh
+COPY deploy/start_api.sh /start_api.sh
+RUN sed -i 's/\r$//' /api_entrypoint.sh /start_api.sh /app/scripts/celery_worker.sh \
+    && chmod +x /api_entrypoint.sh /start_api.sh /app/scripts/celery_worker.sh
 
 EXPOSE 8000
 
 ENTRYPOINT ["/api_entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
+CMD ["/start_api.sh"]

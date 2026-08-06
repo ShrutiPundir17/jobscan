@@ -1,0 +1,12 @@
+# Railway: deploy from repo root with this Dockerfile.
+# Create separate services for api / celery-worker / celery-beat (same image, different start commands).
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "deploy/Dockerfile.api"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5
