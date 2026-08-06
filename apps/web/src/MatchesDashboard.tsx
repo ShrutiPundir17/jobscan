@@ -174,8 +174,10 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
                   <div>
                     <div className="match-title">{m.job.title}</div>
                     <div className="muted">
-                      {m.job.company}
-                      {m.job.location ? ` · ${m.job.location}` : ""} · {m.job.source}
+                      {m.job.company} · {m.job.source}
+                    </div>
+                    <div className={`match-location ${m.job.location ? "" : "missing"}`}>
+                      {m.job.location?.trim() || "Location not listed"}
                     </div>
                   </div>
                   <div className="match-score-block">

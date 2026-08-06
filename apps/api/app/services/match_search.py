@@ -67,45 +67,61 @@ def resolve_resume_for_match(
     return resume
 
 
+def _location_aliases(text: str) -> set[str]:
+    """Expand a preferred location into common listing spellings."""
+    aliases = {text}
+    lowered = text.lower().strip()
+    if lowered in {"bangalore", "bengaluru"}:
+        aliases.update({"bangalore", "bengaluru"})
+    elif lowered in {"mumbai", "bombay"}:
+        aliases.update({"mumbai", "bombay"})
+    elif lowered in {"delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"}:
+        aliases.update({"delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"})
+    elif lowered in {"hyderabad", "hyd", "secunderabad"}:
+        aliases.update({"hyderabad", "secunderabad"})
+    elif lowered in {"pune"}:
+        aliases.update({"pune"})
+    elif lowered in {"chennai", "madras"}:
+        aliases.update({"chennai", "madras"})
+    elif lowered in {"remote", "wfh", "work from home", "anywhere"}:
+        aliases.update({"remote", "wfh", "work from home", "anywhere"})
+    return aliases
+
+
 def location_preference_clauses(user: User) -> list:
     """
-    SQLAlchemy OR clauses for preferred locations.
+    Strict SQLAlchemy OR clauses for preferred locations.
 
-    Also keeps remote / unspecified locations. Does NOT match every "…, India"
-    posting — that was wrongly treating all Indian cities as a hit.
+    Only matches the cities/aliases the user listed. Remote/WFH is included
+    only when the user explicitly prefers Remote. Jobs with missing location
+    are NOT treated as matches (they were leaking Bangalore/other cities).
     """
     locations = user.preferred_locations or []
     if not isinstance(locations, list) or not locations:
         return []
 
     clauses = []
+    wants_remote = False
     for loc in locations:
         text = str(loc).strip()
         if not text:
             continue
-        aliases = {text}
         lowered = text.lower()
-        if lowered in {"bangalore", "bengaluru"}:
-            aliases.update({"bangalore", "bengaluru"})
-        if lowered in {"mumbai", "bombay"}:
-            aliases.update({"mumbai", "bombay"})
-        if lowered in {"delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"}:
-            aliases.update({"delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"})
-        for alias in aliases:
+        if lowered in {"remote", "wfh", "work from home", "anywhere"}:
+            wants_remote = True
+        for alias in _location_aliases(text):
             clauses.append(Job.location.ilike(f"%{alias}%"))
 
-    if not clauses:
-        return []
+    if wants_remote:
+        clauses.extend(
+            [
+                Job.location.ilike("%remote%"),
+                Job.location.ilike("%work from home%"),
+                Job.location.ilike("%wfh%"),
+                Job.location.ilike("%anywhere%"),
+            ]
+        )
 
-    clauses.extend(
-        [
-            Job.location.is_(None),
-            Job.location.ilike("%remote%"),
-            Job.location.ilike("%work from home%"),
-            Job.location.ilike("%wfh%"),
-            Job.location.ilike("%anywhere%"),
-        ]
-    )
     return clauses
 
 

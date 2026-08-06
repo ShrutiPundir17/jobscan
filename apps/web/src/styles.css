@@ -786,6 +786,18 @@ input[type="range"] {
   color: var(--ink);
 }
 
+.match-location {
+  margin-top: 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--cyan-deep);
+}
+
+.match-location.missing {
+  color: #b45309;
+  font-weight: 600;
+}
+
 .match-score-block {
   display: flex;
   flex-direction: column;

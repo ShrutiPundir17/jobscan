@@ -126,7 +126,9 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                   <div className="match-title">{a.job.title}</div>
                   <div className="muted">
                     {a.job.company}
-                    {a.job.location ? ` · ${a.job.location}` : ""}
+                  </div>
+                  <div className={`match-location ${a.job.location ? "" : "missing"}`}>
+                    {a.job.location?.trim() || "Location not listed"}
                   </div>
                 </div>
                 <div className="match-score-block">
