@@ -10,11 +10,12 @@ from __future__ import annotations
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
-from app.models import Application, ApplicationStatus, User
+from app.models import Application, ApplicationStatus, Job, User
 from app.services.match_score import verdict_from_score
+from app.services.match_search import location_preference_clauses
 
 
 def _normalize_skill_gaps(raw: list | dict | None) -> list[str]:
@@ -50,6 +51,12 @@ def list_persisted_matches(
         filters.append(Application.match_score >= int(min_score))
     if status_filter is not None:
         filters.append(Application.status == status_filter)
+
+    loc_clauses = location_preference_clauses(user)
+    if loc_clauses:
+        filters.append(
+            Application.job_id.in_(select(Job.id).where(or_(*loc_clauses)))
+        )
 
     total = int(
         db.scalar(select(func.count()).select_from(Application).where(*filters)) or 0

@@ -17,12 +17,35 @@ class TriggerResponse(BaseModel):
 
 @router.post("/trigger", response_model=TriggerResponse)
 def trigger_scan(current_user: User = Depends(get_current_user)) -> TriggerResponse:
-    """Manually enqueue a job-portal scan (same task as the 2-hour schedule)."""
-    async_result = scan_jobs.delay()
+    """
+    Manually enqueue a job-portal scan.
+
+    Uses the current user's target roles + preferred locations when set,
+    so Scan jobs is not stuck on the global SCANNER_LOCATIONS default (bangalore).
+    """
+    roles = [
+        str(r).strip()
+        for r in (current_user.target_roles or [])
+        if str(r).strip()
+    ]
+    locs = [
+        str(loc).strip()
+        for loc in (current_user.preferred_locations or [])
+        if str(loc).strip()
+    ]
+    async_result = scan_jobs.delay(
+        keywords=roles or None,
+        locations=locs or None,
+    )
+    where = ", ".join(locs) if locs else "default scanner locations"
+    what = ", ".join(roles[:3]) if roles else "default scanner keywords"
     return TriggerResponse(
         status="queued",
         task_id=async_result.id,
-        message=f"Scan queued for {current_user.email}. Normally runs every 2 hours via Celery beat.",
+        message=(
+            f"Scan queued for {current_user.email} "
+            f"({what} · {where}). Wait ~1–2 min, then Find matches."
+        ),
     )
 
 

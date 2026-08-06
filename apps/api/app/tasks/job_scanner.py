@@ -17,6 +17,31 @@ def _parse_csv(value: str) -> list[str]:
     return [part.strip() for part in value.split(",") if part.strip()]
 
 
+def _normalize_locations(raw: list[str] | None) -> list[str | None]:
+    if not raw:
+        return [None]
+    out: list[str] = []
+    for loc in raw:
+        text = str(loc).strip()
+        if not text:
+            continue
+        lowered = text.lower()
+        if lowered in {"bangalore", "bengaluru"}:
+            out.extend(["bangalore", "bengaluru"])
+        else:
+            out.append(text)
+    # unique, preserve order
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for loc in out:
+        key = loc.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        uniq.append(loc)
+    return uniq or [None]
+
+
 async def _scrape_portal(
     portal: str,
     *,
@@ -55,9 +80,17 @@ async def _scrape_portal(
         return await scraper.scrape()
 
 
-async def _run_scan() -> dict[str, Any]:
-    keywords = _parse_csv(settings.scanner_keywords)
-    locations = _parse_csv(settings.scanner_locations) or [None]
+async def _run_scan(
+    *,
+    keywords: list[str] | None = None,
+    locations: list[str] | None = None,
+) -> dict[str, Any]:
+    kw = keywords if keywords else _parse_csv(settings.scanner_keywords)
+    locs = (
+        _normalize_locations(locations)
+        if locations is not None
+        else (_parse_csv(settings.scanner_locations) or [None])
+    )
     portals = [p.lower() for p in _parse_csv(settings.scanner_portals)]
     max_pages = max(1, settings.scanner_max_pages)
     headless = settings.scanner_headless
@@ -65,8 +98,8 @@ async def _run_scan() -> dict[str, Any]:
 
     summary: dict[str, Any] = {
         "portals": portals,
-        "keywords": keywords,
-        "locations": [loc or "" for loc in locations],
+        "keywords": kw,
+        "locations": [loc or "" for loc in locs],
         "scraped": 0,
         "ingest": {"inserted": 0, "updated": 0, "skipped": 0},
         "errors": [],
@@ -77,7 +110,7 @@ async def _run_scan() -> dict[str, Any]:
         summary["status"] = "disabled"
         return summary
 
-    if not keywords:
+    if not kw:
         summary["status"] = "skipped"
         summary["errors"].append("No scanner keywords configured")
         return summary
@@ -86,8 +119,8 @@ async def _run_scan() -> dict[str, Any]:
 
     for portal in portals:
         portal_count = 0
-        for keyword in keywords:
-            for location in locations:
+        for keyword in kw:
+            for location in locs:
                 try:
                     jobs = await _scrape_portal(
                         portal,
@@ -132,10 +165,17 @@ async def _run_scan() -> dict[str, Any]:
     soft_time_limit=15 * 60,
     time_limit=18 * 60,
 )
-def scan_jobs() -> dict[str, Any]:
-    """Celery entrypoint — scrape configured portals and upsert into jobs."""
-    logger.info("scan_jobs_started")
-    result = asyncio.run(_run_scan())
+def scan_jobs(
+    keywords: list[str] | None = None,
+    locations: list[str] | None = None,
+) -> dict[str, Any]:
+    """Celery entrypoint — scrape portals (optional per-user keywords/locations)."""
+    logger.info(
+        "scan_jobs_started keywords=%s locations=%s",
+        keywords,
+        locations,
+    )
+    result = asyncio.run(_run_scan(keywords=keywords, locations=locations))
     logger.info(
         "scan_jobs_finished status=%s scraped=%s ingest=%s errors=%s",
         result.get("status"),
@@ -143,7 +183,6 @@ def scan_jobs() -> dict[str, Any]:
         result.get("ingest"),
         len(result.get("errors") or []),
     )
-    # Queue Stage 1 job embeddings for newly ingested / invalidated rows
     try:
         from app.tasks.job_embeddings import embed_pending_jobs
 

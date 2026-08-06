@@ -67,31 +67,53 @@ def resolve_resume_for_match(
     return resume
 
 
-def _apply_preference_filters(stmt: Select, user: User) -> Select:
-    """Soft location filter from user preferences (keeps remote / India-wide)."""
+def location_preference_clauses(user: User) -> list:
+    """
+    SQLAlchemy OR clauses for preferred locations.
+
+    Also keeps remote / unspecified locations. Does NOT match every "…, India"
+    posting — that was wrongly treating all Indian cities as a hit.
+    """
     locations = user.preferred_locations or []
     if not isinstance(locations, list) or not locations:
-        return stmt
+        return []
 
     clauses = []
     for loc in locations:
         text = str(loc).strip()
         if not text:
             continue
-        clauses.append(Job.location.ilike(f"%{text}%"))
+        aliases = {text}
+        lowered = text.lower()
+        if lowered in {"bangalore", "bengaluru"}:
+            aliases.update({"bangalore", "bengaluru"})
+        if lowered in {"mumbai", "bombay"}:
+            aliases.update({"mumbai", "bombay"})
+        if lowered in {"delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"}:
+            aliases.update({"delhi", "new delhi", "ncr", "gurgaon", "gurugram", "noida"})
+        for alias in aliases:
+            clauses.append(Job.location.ilike(f"%{alias}%"))
 
     if not clauses:
-        return stmt
+        return []
 
     clauses.extend(
         [
             Job.location.is_(None),
             Job.location.ilike("%remote%"),
             Job.location.ilike("%work from home%"),
+            Job.location.ilike("%wfh%"),
             Job.location.ilike("%anywhere%"),
-            Job.location.ilike("%india%"),
         ]
     )
+    return clauses
+
+
+def _apply_preference_filters(stmt: Select, user: User) -> Select:
+    """Filter jobs to the user's preferred locations (+ remote)."""
+    clauses = location_preference_clauses(user)
+    if not clauses:
+        return stmt
     return stmt.where(or_(*clauses))
 
 

@@ -182,7 +182,7 @@ export const api = {
         limit: body.limit ?? 10,
         persist: body.persist ?? true,
         min_similarity: body.min_similarity ?? 0.3,
-        apply_location_prefs: body.apply_location_prefs ?? false,
+        apply_location_prefs: body.apply_location_prefs ?? true,
       }),
     });
   },

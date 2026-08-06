@@ -40,7 +40,11 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     onError(null);
     onMessage("Scoring matches with Gemini — this can take 1–3 minutes. Keep this tab open…");
     try {
-      const res = await api.scoreMatches({ limit: 10, persist: true });
+      const res = await api.scoreMatches({
+        limit: 10,
+        persist: true,
+        apply_location_prefs: true,
+      });
       onMessage(
         `Scored ${res.count} roles — saved ${res.persisted_count} matches (min ${res.min_match_score}).`,
       );
