@@ -45,7 +45,8 @@ class Settings(BaseSettings):
     # Phase 4 Stage 2 — LLM deep-score (Gemini)
     match_deep_score_limit: int = 10
 
-    # Notifications — email (SMTP) + WhatsApp (Twilio)
+    # Notifications — email (Resend HTTPS and/or SMTP) + WhatsApp (Twilio)
+    resend_api_key: str | None = None
     smtp_host: str | None = None
     smtp_port: int = 587
     smtp_username: str | None = None
@@ -64,6 +65,8 @@ class Settings(BaseSettings):
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     def email_configured(self) -> bool:
+        if self.resend_api_key and self.smtp_from_email:
+            return True
         return bool(self.smtp_host and self.smtp_from_email)
 
     def whatsapp_configured(self) -> bool:
