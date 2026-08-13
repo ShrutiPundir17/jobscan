@@ -9,6 +9,8 @@
     "preview": "vite preview --host 0.0.0.0 --port 5173"
   },
   "dependencies": {
+    "@paper-design/shaders-react": "^0.0.80",
+    "framer-motion": "^13.1.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
