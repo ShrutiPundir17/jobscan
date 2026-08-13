@@ -124,6 +124,7 @@ export function OnboardingFlow({ onDone }: Props) {
 
   return (
     <div className="onboard-page">
+      <div className="auth-ambient" aria-hidden />
       <div className="onboard-card fade-in">
         <div className="onboard-steps">
           {[

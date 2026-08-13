@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 function toneColor(score: number): string {
-  if (score >= 80) return "#10B981";
-  if (score >= 60) return "#F59E0B";
+  if (score >= 80) return "#C0C0C0";
+  if (score >= 60) return "#A0A0A0";
   return "#F43F5E";
 }
 

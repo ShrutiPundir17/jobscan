@@ -65,6 +65,7 @@ export function LoginPage({ onLoggedIn, onBack, initialMode = "login" }: Props) 
 
   return (
     <div className="auth-page">
+      <div className="auth-ambient" aria-hidden />
       <div className="auth-card fade-in">
         <div className="auth-logo">
           <p className="brand">
