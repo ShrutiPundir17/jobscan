@@ -233,8 +233,8 @@ export function LoginPage({
 
             <p className="auth-help">
               {forgotKind === "password"
-                ? "Enter the email you use to sign in. We’ll send a reset link."
-                : "Enter the phone number saved in your preferences. We’ll email your login address."}
+                ? "Enter the email you use to sign in. We’ll send a reset link by email, or WhatsApp if email isn’t available."
+                : "Enter the phone number saved in your preferences. We’ll send your login email on WhatsApp (or show it here)."}
             </p>
 
             {forgotKind === "password" ? (

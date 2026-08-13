@@ -64,6 +64,37 @@ def _public_reset_url(token: str) -> str:
     return f"{base}/?reset_token={token}"
 
 
+def _try_send_email(*, to_email: str, subject: str, text_body: str, html_body: str) -> str:
+    """
+    Prefer Resend. In production, skip Gmail SMTP (usually blocked on Railway)
+    so callers can fall back to WhatsApp quickly.
+    """
+    if settings.resend_api_key and settings.smtp_from_email:
+        return send_email(
+            to_email=to_email,
+            subject=subject,
+            text_body=text_body,
+            html_body=html_body,
+        )
+    if settings.app_env == "production":
+        logger.info("email_skipped reason=no_resend_in_production to=%s", to_email)
+        return "skipped:no_resend"
+    return send_email(
+        to_email=to_email,
+        subject=subject,
+        text_body=text_body,
+        html_body=html_body,
+    )
+
+
+def _try_send_whatsapp(*, phone: str | None, body: str) -> str:
+    if not phone or not settings.whatsapp_configured():
+        return "skipped"
+    from app.services.notify_whatsapp import send_whatsapp
+
+    return send_whatsapp(to_phone=phone, body=body)
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
     email = payload.email.lower().strip()
@@ -127,40 +158,70 @@ def forgot_password(
     text_body = (
         "Reset your JobAgent password using this link (expires in 1 hour):\n\n"
         f"{reset_url}\n\n"
-        "If you did not request this, you can ignore this email."
+        "If you did not request this, you can ignore this message."
     )
     html_body = (
         "<p>Reset your JobAgent password using this link "
         "(expires in 1 hour):</p>"
         f'<p><a href="{reset_url}">{reset_url}</a></p>'
-        "<p>If you did not request this, you can ignore this email.</p>"
+        "<p>If you did not request this, you can ignore this message.</p>"
+    )
+    wa_body = (
+        "JobAgent password reset (expires in 1 hour):\n"
+        f"{reset_url}\n"
+        "If you did not request this, ignore this message."
     )
 
-    if not settings.email_configured():
-        logger.info("forgot_password email skipped; returning token for %s", email)
-        return ForgotPasswordResponse(
-            message=(
-                "Email delivery is not configured on this server. "
-                "Use the reset link below to continue."
-            ),
-            reset_token=raw_token,
-            reset_url=reset_url,
-        )
-
-    status_str = send_email(
+    email_status = _try_send_email(
         to_email=user.email,
         subject="Reset your JobAgent password",
         text_body=text_body,
         html_body=html_body,
     )
-    if status_str.startswith("failed") or status_str == "skipped":
-        logger.warning("forgot_password delivery=%s email=%s", status_str, email)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not send reset email. Please try again shortly.",
+    if email_status == "sent":
+        return ForgotPasswordResponse(
+            message="If an account exists for that email, we sent password reset instructions."
         )
 
-    return ForgotPasswordResponse(message=GENERIC_FORGOT_PASSWORD_MSG)
+    wa_status = _try_send_whatsapp(phone=user.phone, body=wa_body)
+    if wa_status == "sent":
+        return ForgotPasswordResponse(
+            message=(
+                "We couldn't reach your email, so we sent a password reset link "
+                "to your WhatsApp (if that number is on your account)."
+            )
+        )
+
+    # Local/dev when neither channel works — still let the owner continue.
+    if settings.app_env != "production":
+        logger.info(
+            "forgot_password falling back to inline token email=%s email_status=%s wa_status=%s",
+            email,
+            email_status,
+            wa_status,
+        )
+        return ForgotPasswordResponse(
+            message=(
+                "We couldn't send email or WhatsApp. Use the reset link below to continue "
+                "(add RESEND_API_KEY or a phone number in Preferences for automatic delivery)."
+            ),
+            reset_token=raw_token,
+            reset_url=reset_url,
+        )
+
+    logger.warning(
+        "forgot_password delivery failed email=%s email_status=%s wa_status=%s",
+        email,
+        email_status,
+        wa_status,
+    )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=(
+            "Could not send a reset link. Add a phone number in Preferences "
+            "(WhatsApp) or configure Resend email, then try again."
+        ),
+    )
 
 
 @router.post("/reset-password", response_model=dict)
@@ -225,27 +286,37 @@ def forgot_username(
         "<p>Sign in at JobAgent with this email and your password.</p>"
         "<p>If you did not request this, you can ignore this message.</p>"
     )
+    wa_body = (
+        f"Your JobAgent login email is: {user.email}\n"
+        "Sign in with this email and your password."
+    )
 
-    if not settings.email_configured():
+    # Prefer WhatsApp for username recovery (user already proved phone ownership).
+    wa_status = _try_send_whatsapp(phone=user.phone, body=wa_body)
+    if wa_status == "sent":
         return ForgotUsernameResponse(
-            message=(
-                "Email delivery is not configured on this server. "
-                "Your login email is shown below."
-            ),
-            login_email=user.email,
+            message="If an account matches that phone number, we sent your login email."
         )
 
-    status_str = send_email(
+    email_status = _try_send_email(
         to_email=user.email,
         subject="Your JobAgent login email",
         text_body=text_body,
         html_body=html_body,
     )
-    if status_str.startswith("failed") or status_str == "skipped":
-        logger.warning("forgot_username delivery=%s user=%s", status_str, user.id)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Could not send recovery email. Please try again shortly.",
+    if email_status == "sent":
+        return ForgotUsernameResponse(
+            message="If an account matches that phone number, we sent your login email."
         )
 
-    return ForgotUsernameResponse(message=GENERIC_FORGOT_USERNAME_MSG)
+    # Matched phone but no outbound channel — show email so recovery still works.
+    logger.info(
+        "forgot_username inline fallback user=%s wa=%s email=%s",
+        user.id,
+        wa_status,
+        email_status,
+    )
+    return ForgotUsernameResponse(
+        message="Matched your phone. Your login email is shown below.",
+        login_email=user.email,
+    )
