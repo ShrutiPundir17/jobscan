@@ -76,6 +76,37 @@ export const api = {
       false,
     );
   },
+  forgotPassword(email: string) {
+    return request<{
+      message: string;
+      reset_token?: string | null;
+      reset_url?: string | null;
+    }>(
+      "/auth/forgot-password",
+      { method: "POST", body: JSON.stringify({ email }) },
+      false,
+    );
+  },
+  resetPassword(token: string, newPassword: string) {
+    return request<{ message: string }>(
+      "/auth/reset-password",
+      {
+        method: "POST",
+        body: JSON.stringify({ token, new_password: newPassword }),
+      },
+      false,
+    );
+  },
+  forgotUsername(phone: string) {
+    return request<{
+      message: string;
+      login_email?: string | null;
+    }>(
+      "/auth/forgot-username",
+      { method: "POST", body: JSON.stringify({ phone }) },
+      false,
+    );
+  },
   me() {
     return request<import("./types").UserProfile>("/users/me");
   },

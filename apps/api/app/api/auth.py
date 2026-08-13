@@ -1,14 +1,67 @@
+import hashlib
+import logging
+import re
+import secrets
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
+from app.config import settings
 from app.db import get_db
-from app.models import User
-from app.schemas.auth import TokenResponse, UserLogin, UserRegister, UserResponse
+from app.models import PasswordResetToken, User
+from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
+    ForgotUsernameRequest,
+    ForgotUsernameResponse,
+    ResetPasswordRequest,
+    TokenResponse,
+    UserLogin,
+    UserRegister,
+    UserResponse,
+)
 from app.security import create_access_token, hash_password, verify_password
+from app.services.notify_email import send_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+logger = logging.getLogger(__name__)
+
+RESET_TOKEN_TTL = timedelta(hours=1)
+GENERIC_FORGOT_PASSWORD_MSG = (
+    "If an account exists for that email, we sent password reset instructions."
+)
+GENERIC_FORGOT_USERNAME_MSG = (
+    "If an account matches that phone number, we sent your login email."
+)
+
+
+def _hash_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _phone_digits(value: str | None) -> str:
+    if not value:
+        return ""
+    return re.sub(r"\D", "", value.strip())
+
+
+def _phones_match(stored: str | None, submitted: str) -> bool:
+    a = _phone_digits(stored)
+    b = _phone_digits(submitted)
+    if not a or not b:
+        return False
+    if a == b:
+        return True
+    # Compare last 10 digits (common for India local vs +91).
+    return len(a) >= 10 and len(b) >= 10 and a[-10:] == b[-10:]
+
+
+def _public_reset_url(token: str) -> str:
+    base = (settings.app_public_url or "http://localhost:5173").rstrip("/")
+    return f"{base}/?reset_token={token}"
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -49,3 +102,150 @@ def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
 @router.get("/me", response_model=UserResponse)
 def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse)
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+) -> ForgotPasswordResponse:
+    email = str(payload.email).lower().strip()
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        return ForgotPasswordResponse(message=GENERIC_FORGOT_PASSWORD_MSG)
+
+    raw_token = secrets.token_urlsafe(32)
+    row = PasswordResetToken(
+        user_id=user.id,
+        token_hash=_hash_token(raw_token),
+        expires_at=datetime.now(timezone.utc) + RESET_TOKEN_TTL,
+    )
+    db.add(row)
+    db.commit()
+
+    reset_url = _public_reset_url(raw_token)
+    text_body = (
+        "Reset your JobAgent password using this link (expires in 1 hour):\n\n"
+        f"{reset_url}\n\n"
+        "If you did not request this, you can ignore this email."
+    )
+    html_body = (
+        "<p>Reset your JobAgent password using this link "
+        "(expires in 1 hour):</p>"
+        f'<p><a href="{reset_url}">{reset_url}</a></p>'
+        "<p>If you did not request this, you can ignore this email.</p>"
+    )
+
+    if not settings.email_configured():
+        logger.info("forgot_password email skipped; returning token for %s", email)
+        return ForgotPasswordResponse(
+            message=(
+                "Email delivery is not configured on this server. "
+                "Use the reset link below to continue."
+            ),
+            reset_token=raw_token,
+            reset_url=reset_url,
+        )
+
+    status_str = send_email(
+        to_email=user.email,
+        subject="Reset your JobAgent password",
+        text_body=text_body,
+        html_body=html_body,
+    )
+    if status_str.startswith("failed") or status_str == "skipped":
+        logger.warning("forgot_password delivery=%s email=%s", status_str, email)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send reset email. Please try again shortly.",
+        )
+
+    return ForgotPasswordResponse(message=GENERIC_FORGOT_PASSWORD_MSG)
+
+
+@router.post("/reset-password", response_model=dict)
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    token_hash = _hash_token(payload.token.strip())
+    row = db.scalar(
+        select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
+    )
+    now = datetime.now(timezone.utc)
+    if row is None or row.used_at is not None or row.expires_at < now:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset link. Request a new one.",
+        )
+
+    user = db.get(User, row.user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset link. Request a new one.",
+        )
+
+    user.hashed_password = hash_password(payload.new_password)
+    row.used_at = now
+    # Invalidate other unused tokens for this user.
+    others = db.scalars(
+        select(PasswordResetToken).where(
+            PasswordResetToken.user_id == user.id,
+            PasswordResetToken.used_at.is_(None),
+            PasswordResetToken.id != row.id,
+        )
+    ).all()
+    for other in others:
+        other.used_at = now
+    db.commit()
+    return {"message": "Password updated. You can sign in with your new password."}
+
+
+@router.post("/forgot-username", response_model=ForgotUsernameResponse)
+def forgot_username(
+    payload: ForgotUsernameRequest,
+    db: Session = Depends(get_db),
+) -> ForgotUsernameResponse:
+    phone = payload.phone.strip()
+    candidates = db.scalars(select(User).where(User.phone.is_not(None))).all()
+    user = next((u for u in candidates if _phones_match(u.phone, phone)), None)
+    if user is None:
+        return ForgotUsernameResponse(message=GENERIC_FORGOT_USERNAME_MSG)
+
+    text_body = (
+        "You requested your JobAgent login email.\n\n"
+        f"Your login email is: {user.email}\n\n"
+        "Sign in at JobAgent with this email and your password.\n"
+        "If you did not request this, you can ignore this message."
+    )
+    html_body = (
+        "<p>You requested your JobAgent login email.</p>"
+        f"<p>Your login email is: <strong>{user.email}</strong></p>"
+        "<p>Sign in at JobAgent with this email and your password.</p>"
+        "<p>If you did not request this, you can ignore this message.</p>"
+    )
+
+    if not settings.email_configured():
+        return ForgotUsernameResponse(
+            message=(
+                "Email delivery is not configured on this server. "
+                "Your login email is shown below."
+            ),
+            login_email=user.email,
+        )
+
+    status_str = send_email(
+        to_email=user.email,
+        subject="Your JobAgent login email",
+        text_body=text_body,
+        html_body=html_body,
+    )
+    if status_str.startswith("failed") or status_str == "skipped":
+        logger.warning("forgot_username delivery=%s user=%s", status_str, user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not send recovery email. Please try again shortly.",
+        )
+
+    return ForgotUsernameResponse(message=GENERIC_FORGOT_USERNAME_MSG)

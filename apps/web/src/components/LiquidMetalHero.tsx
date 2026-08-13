@@ -13,6 +13,8 @@ export type LiquidMetalHeroProps = {
   primaryAction: LiquidMetalHeroAction;
   secondaryAction: LiquidMetalHeroAction;
   marqueeText?: string;
+  /** Content alignment — use "start" for editorial left-aligned headlines. */
+  align?: "center" | "start";
 };
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
@@ -47,6 +49,7 @@ export function LiquidMetalHero({
   primaryAction,
   secondaryAction,
   marqueeText,
+  align = "center",
 }: LiquidMetalHeroProps) {
   const reduceMotion = useReducedMotion();
   const preset = (liquidMetalPresets[2]?.params ?? {}) as Record<string, unknown>;
@@ -59,7 +62,7 @@ export function LiquidMetalHero({
     : { animation: "lmh-spin 20s linear infinite" };
 
   return (
-    <section className="lmh">
+    <section className={`lmh ${align === "start" ? "lmh-align-start" : ""}`}>
       {marqueeText ? (
         <>
           <div className="lmh-strip lmh-strip-top">

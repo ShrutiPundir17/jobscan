@@ -34,6 +34,9 @@ docker compose exec backend alembic upgrade head
 |--------|------|------|
 | POST | `/auth/register` | no |
 | POST | `/auth/login` | no |
+| POST | `/auth/forgot-password` | no |
+| POST | `/auth/reset-password` | no |
+| POST | `/auth/forgot-username` | no |
 | GET | `/auth/me` | Bearer JWT |
 
 ## Route skeleton
@@ -48,7 +51,7 @@ Stub endpoints return **501** until implemented. Auth works for real.
 | matches | **`POST /matches/search`**, **`POST /matches/score`**, **`GET /matches`**, **`GET /matches/{id}`**, **`POST /matches/{id}/tailor`** |
 | applications | list, get, apply, update, withdraw |
 | notifications | **`GET /notifications`**, **`PATCH /notifications/{id}/read`** |
-| scanner | trigger, **embed-jobs** |
+| scanner | trigger, **embed-jobs** |w
 
 Interactive docs: http://localhost:8000/docs
 

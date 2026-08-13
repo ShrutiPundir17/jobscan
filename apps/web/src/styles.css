@@ -856,6 +856,65 @@ p {
   margin-top: 1rem;
   font-size: 0.85rem;
   color: var(--text-muted);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  width: 100%;
+}
+
+.auth-heading {
+  margin: 0 0 1rem;
+  font-size: 1.15rem;
+  font-weight: 650;
+  color: #fff;
+  text-align: center;
+}
+
+.auth-help {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.auth-forgot-link {
+  align-self: flex-start;
+  margin: -0.25rem 0 0.15rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.auth-forgot-link:hover {
+  color: #fff;
+}
+
+.auth-subtabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.auth-subtab {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-subtab.active {
+  color: #000;
+  background: #fff;
+  border-color: #fff;
 }
 
 /* ??? Onboarding ??? */
@@ -2069,21 +2128,52 @@ p {
   position: relative;
   z-index: 10;
   margin: 0 auto;
-  max-width: 900px;
+  max-width: 920px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
 }
 
+.lmh.lmh-align-start .lmh-content {
+  align-items: flex-start;
+  text-align: left;
+  margin-left: clamp(1.25rem, 8vw, 6rem);
+  margin-right: auto;
+}
+
+.lmh.lmh-align-start .lmh-actions {
+  justify-content: flex-start;
+}
+
 .lmh-headline {
   margin: 0;
-  max-width: 18ch;
-  font-size: clamp(3.5rem, 10vw, 6.25rem);
+  max-width: 14ch;
+  font-size: clamp(2.75rem, 8vw, 5.5rem);
   font-weight: 800;
-  line-height: 0.95;
+  line-height: 1.02;
   letter-spacing: -0.04em;
   color: #fff;
+}
+
+.lmh-mark-green {
+  color: #8a8a8a;
+  -webkit-text-fill-color: #8a8a8a;
+  background: none;
+}
+
+.lmh-strike {
+  color: #6b6b6b;
+  text-decoration: line-through;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0;
+}
+
+.lmh-headline-tail {
+  display: inline-block;
+  vertical-align: top;
+  text-align: left;
 }
 
 .lmh-subtitle {

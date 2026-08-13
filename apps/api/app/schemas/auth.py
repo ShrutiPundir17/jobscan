@@ -42,3 +42,29 @@ class UserResponse(BaseModel):
     target_roles: list[str] = Field(default_factory=list)
     preferred_locations: list[str] = Field(default_factory=list)
     created_at: datetime
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    # Only present when outbound email is not configured (local/dev).
+    reset_token: str | None = None
+    reset_url: str | None = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str = Field(min_length=20, max_length=200)
+    new_password: str = Field(min_length=8, max_length=128)
+
+
+class ForgotUsernameRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=32)
+
+
+class ForgotUsernameResponse(BaseModel):
+    message: str
+    # Only present when outbound email is not configured and a match was found.
+    login_email: str | None = None

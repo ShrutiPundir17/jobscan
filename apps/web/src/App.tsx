@@ -27,8 +27,21 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: "preferences", label: "Preferences", icon: "⚙" },
 ];
 
+function readResetToken(): string | null {
+  try {
+    const token = new URLSearchParams(window.location.search).get("reset_token");
+    return token && token.trim() ? token.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function App() {
-  const [gate, setGate] = useState<Gate>(() => (getToken() ? "boot" : "landing"));
+  const resetToken = readResetToken();
+  const [gate, setGate] = useState<Gate>(() => {
+    if (resetToken) return "login";
+    return getToken() ? "boot" : "landing";
+  });
   const [tab, setTab] = useState<Tab>("dashboard");
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -86,6 +99,7 @@ export default function App() {
     return (
       <LoginPage
         initialMode={gate === "signup" ? "signup" : "login"}
+        initialResetToken={resetToken}
         onLoggedIn={afterLogin}
         onBack={() => setGate("landing")}
       />
