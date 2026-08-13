@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import { MatchCard, MatchCardLoading } from "./components/MatchCard";
 import type { PersistedMatch } from "./types";
 
 type Props = {
@@ -7,14 +8,16 @@ type Props = {
   onError: (msg: string | null) => void;
 };
 
+const FILTERS = ["All", "Strong", "Good", "Weak", "LinkedIn", "Internshala", "Unstop"] as const;
+
 export function MatchesDashboard({ onMessage, onError }: Props) {
   const [items, setItems] = useState<PersistedMatch[]>([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [scoring, setScoring] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<Set<string>>(new Set());
+  const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
 
   async function load() {
     setLoading(true);
@@ -22,7 +25,6 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     try {
       const res = await api.listMatches();
       setItems(res.items);
-      setTotal(res.total);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Failed to load matches");
     } finally {
@@ -34,26 +36,38 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     void load();
   }, []);
 
+  const filtered = useMemo(() => {
+    return items.filter((m) => {
+      if (dismissed.has(m.id)) return true;
+      const v = (m.verdict || "").toLowerCase();
+      const src = (m.job.source || "").toLowerCase();
+      if (filter === "All") return true;
+      if (filter === "Strong") return v === "strong";
+      if (filter === "Good") return v === "good" || v === "strong";
+      if (filter === "Weak") return v === "weak" || v === "poor";
+      return src.includes(filter.toLowerCase());
+    });
+  }, [items, filter, dismissed]);
+
+  const visible = filtered.filter((m) => !dismissed.has(m.id));
+
   async function findMatches() {
     setScoring(true);
-    onMessage(null);
+    onMessage("Scoring matches — keep this tab open…");
     onError(null);
-    onMessage("Scoring matches with Gemini — this can take 1–3 minutes. Keep this tab open…");
     try {
       const res = await api.scoreMatches({
         limit: 10,
         persist: true,
         apply_location_prefs: true,
       });
-      onMessage(
-        `Scored ${res.count} roles — saved ${res.persisted_count} matches (min ${res.min_match_score}).`,
-      );
+      onMessage(`Scored ${res.count} · saved ${res.persisted_count} matches.`);
       await load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Match scoring failed";
       onError(
         /abort|timeout|failed to fetch|network/i.test(msg)
-          ? "Find matches timed out or lost connection. Gemini may be busy — wait a minute and try again."
+          ? "Find matches timed out. Wait a minute and try again."
           : msg,
       );
       onMessage(null);
@@ -69,7 +83,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     try {
       const scan = await api.triggerScan();
       await api.triggerEmbedJobs();
-      onMessage(`${scan.message} Embeddings queued. Wait ~1–2 min, then Find matches.`);
+      onMessage(`${scan.message} Wait ~1–2 min, then Find matches.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Scan failed");
     } finally {
@@ -79,8 +93,6 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
 
   async function tailor(id: string) {
     setBusyId(id);
-    onMessage(null);
-    onError(null);
     try {
       const res = await api.tailorMatch(id);
       setItems((prev) =>
@@ -95,8 +107,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
             : m,
         ),
       );
-      setExpandedId(id);
-      onMessage(`Tailored resume ready for ${res.job.title} @ ${res.job.company}.`);
+      onMessage(`Tailored for ${res.job.title} @ ${res.job.company}.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Tailor failed");
     } finally {
@@ -106,7 +117,6 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
 
   async function apply(id: string, url: string) {
     setBusyId(id);
-    onError(null);
     try {
       const res = await api.applyToJob(id);
       window.open(url, "_blank", "noopener,noreferrer");
@@ -119,30 +129,19 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     }
   }
 
-  function copyText(text: string) {
-    void navigator.clipboard.writeText(text);
-    onMessage("Copied tailored resume to clipboard.");
-  }
-
-  if (loading) {
-    return <p className="muted">Loading matches…</p>;
-  }
-
   return (
-    <section className="panel panel-pad fade-in">
-      <div className="row space-between" style={{ marginBottom: "1rem", gap: "0.75rem" }}>
+    <div className="fade-in">
+      <div className="row space-between" style={{ marginBottom: "1rem", flexWrap: "wrap" }}>
         <div>
-          <h2 className="section-title" style={{ marginBottom: 0 }}>
-            Matches
-          </h2>
-          <p className="section-copy" style={{ marginTop: "0.35rem" }}>
-            Scores, gaps, and JD-tailored bullets — {total} saved for you.
+          <h1 style={{ fontSize: "1.35rem" }}>Matches</h1>
+          <p className="muted" style={{ fontSize: "0.875rem" }}>
+            {visible.length} ranked for you
           </p>
         </div>
         <div className="row" style={{ flexWrap: "wrap" }}>
           <button
             type="button"
-            className="btn btn-soft"
+            className="btn btn-secondary"
             disabled={scanning || scoring}
             onClick={() => void scanJobs()}
           >
@@ -159,119 +158,72 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
         </div>
       </div>
 
-      {items.length === 0 ? (
-        <div className="muted" style={{ display: "grid", gap: "0.55rem" }}>
-          <p style={{ margin: 0 }}>
-            No matches for your current preferred locations yet.
+      <div className="filter-bar">
+        {FILTERS.map((f) => (
+          <button
+            key={f}
+            type="button"
+            className={`filter-chip ${filter === f ? "active" : ""}`}
+            onClick={() => setFilter(f)}
+          >
+            {f}
+          </button>
+        ))}
+      </div>
+
+      {scoring ? (
+        <div className="match-grid" style={{ marginBottom: "1rem" }}>
+          <MatchCardLoading />
+          <MatchCardLoading />
+        </div>
+      ) : null}
+
+      {loading ? (
+        <p className="muted">Loading matches…</p>
+      ) : visible.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-illu">EMPTY STATE</div>
+          <p className="block-label" style={{ marginBottom: 8 }}>
+            0 results
           </p>
-          <p style={{ margin: 0 }}>
-            1) On <strong>Profile</strong>, add <strong>Target roles</strong> (e.g. Software
-            Engineer) and save.
-            <br />
-            2) Click <strong>Scan jobs</strong> here (uses your cities) and wait ~1–2 minutes.
-            <br />
-            3) Click <strong>Find matches</strong> again.
+          <p className="muted" style={{ marginBottom: 12 }}>
+            {items.length === 0
+              ? "No matches yet — your agent is hunting. Scan jobs, then Find matches."
+              : "Try adjusting your filters or preferences."}
           </p>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => {
+              if (items.length === 0) void findMatches();
+              else setFilter("All");
+            }}
+          >
+            {items.length === 0 ? "Find matches" : "Clear filters"}
+          </button>
         </div>
       ) : (
-        <div className="match-list">
-          {items.map((m) => {
-            const open = expandedId === m.id;
-            return (
-              <article className="match-card" key={m.id}>
-                <div className="row space-between" style={{ gap: "0.75rem", alignItems: "flex-start" }}>
-                  <div>
-                    <div className="match-title">{m.job.title}</div>
-                    <div className="muted">
-                      {m.job.company} · {m.job.source}
-                    </div>
-                    <div className={`match-location ${m.job.location ? "" : "missing"}`}>
-                      {m.job.location?.trim() || "Location not listed"}
-                    </div>
-                  </div>
-                  <div className="match-score-block">
-                    <span className="match-score">{m.match_score ?? "—"}</span>
-                    <span className={`status-pill ${m.verdict === "strong" || m.verdict === "good" ? "ok" : "warn"}`}>
-                      {m.verdict ?? m.status}
-                    </span>
-                  </div>
-                </div>
-
-                {m.match_reasoning ? (
-                  <p className="match-reason">{m.match_reasoning}</p>
-                ) : null}
-
-                {m.skill_gaps.length > 0 ? (
-                  <div className="chip-row" style={{ marginTop: "0.5rem" }}>
-                    {m.skill_gaps.slice(0, 6).map((g) => (
-                      <span className="chip" key={g}>
-                        gap: {g}
-                      </span>
-                    ))}
-                  </div>
-                ) : null}
-
-                <div className="row" style={{ marginTop: "0.85rem", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    className="btn btn-soft"
-                    disabled={busyId === m.id}
-                    onClick={() => void tailor(m.id)}
-                  >
-                    {busyId === m.id ? "Tailoring…" : m.tailored_resume_text ? "Re-tailor" : "Tailor resume"}
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-accent"
-                    disabled={busyId === m.id}
-                    onClick={() => void apply(m.id, m.job.url)}
-                  >
-                    Apply
-                  </button>
-                  <a className="btn btn-ghost" href={m.job.url} target="_blank" rel="noreferrer">
-                    Open JD
-                  </a>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    onClick={() => setExpandedId(open ? null : m.id)}
-                  >
-                    {open ? "Hide details" : "Details"}
-                  </button>
-                </div>
-
-                {open ? (
-                  <div className="match-detail fade-in">
-                    {m.tailored_pitch ? (
-                      <>
-                        <h4>Pitch</h4>
-                        <p>{m.tailored_pitch}</p>
-                      </>
-                    ) : null}
-                    {m.tailored_resume_text ? (
-                      <>
-                        <div className="row space-between">
-                          <h4>Tailored resume</h4>
-                          <button
-                            type="button"
-                            className="btn btn-soft"
-                            onClick={() => copyText(m.tailored_resume_text || "")}
-                          >
-                            Copy
-                          </button>
-                        </div>
-                        <pre className="tailored-pre">{m.tailored_resume_text}</pre>
-                      </>
-                    ) : (
-                      <p className="muted">No tailored resume yet — click Tailor resume.</p>
-                    )}
-                  </div>
-                ) : null}
-              </article>
-            );
-          })}
+        <div className="match-grid">
+          {filtered.map((m) => (
+            <MatchCard
+              key={m.id}
+              match={m}
+              busy={busyId === m.id}
+              dismissed={dismissed.has(m.id)}
+              onDismiss={() => setDismissed((s) => new Set(s).add(m.id))}
+              onUndo={() =>
+                setDismissed((s) => {
+                  const n = new Set(s);
+                  n.delete(m.id);
+                  return n;
+                })
+              }
+              onApply={() => void apply(m.id, m.job.url)}
+              onTailor={() => void tailor(m.id)}
+            />
+          ))}
         </div>
       )}
-    </section>
+    </div>
   );
 }
