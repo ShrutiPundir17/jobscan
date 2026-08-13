@@ -187,8 +187,8 @@ def forgot_password(
     if wa_status == "sent":
         return ForgotPasswordResponse(
             message=(
-                "We couldn't reach your email, so we sent a password reset link "
-                "to your WhatsApp (if that number is on your account)."
+                "Password reset email isn't available on this server yet "
+                "(cloud hosts block Gmail SMTP). We sent the reset link to your WhatsApp instead."
             )
         )
 
