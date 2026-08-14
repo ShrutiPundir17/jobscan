@@ -59,7 +59,7 @@ export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
   }, []);
 
   const pending = apps.filter((a) =>
-    ["pending_review", "applied", "interviewing"].includes(a.status),
+    ["applied", "applying", "interviewing"].includes(a.status),
   ).length;
   const interviews = apps.filter((a) => a.status === "interviewing").length;
   const offers = apps.filter((a) => a.status === "offered").length;

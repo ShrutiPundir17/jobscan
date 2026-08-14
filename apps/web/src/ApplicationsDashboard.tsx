@@ -8,12 +8,15 @@ type Props = {
 };
 
 const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
-  { key: "applied", label: "Applied", statuses: ["applied", "pending_review"] },
-  { key: "viewed", label: "Viewed", statuses: ["viewed"] },
-  { key: "phone", label: "Phone Screen", statuses: ["phone_screen"] },
+  {
+    key: "review",
+    label: "To review",
+    statuses: ["pending_review", "matched", "discovered"],
+  },
+  { key: "applied", label: "Applied", statuses: ["applied", "applying"] },
   { key: "interview", label: "Interview", statuses: ["interviewing"] },
   { key: "offer", label: "Offer", statuses: ["offered"] },
-  { key: "rejected", label: "Rejected", statuses: ["rejected", "withdrawn"] },
+  { key: "rejected", label: "Rejected", statuses: ["rejected", "withdrawn", "failed"] },
 ];
 
 export function ApplicationsDashboard({ onMessage, onError }: Props) {
@@ -46,10 +49,13 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
     for (const item of items) {
       const col = COLUMNS.find((c) => c.statuses.includes(item.status));
       if (col) map[col.key].push(item);
-      else map.applied.push(item);
+      else map.review.push(item);
     }
     return map;
   }, [items]);
+
+  const appliedCount = byCol.applied.length;
+  const reviewCount = byCol.review.length;
 
   async function moveTo(id: string, status: string) {
     setBusyId(id);
@@ -83,6 +89,7 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
   }
 
   function methodLabel(a: ApplicationItem): string {
+    if (["pending_review", "matched", "discovered"].includes(a.status)) return "Match";
     if (a.applied_at) return "One-tap";
     return "Manual";
   }
@@ -95,7 +102,9 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
         <div>
           <h1 style={{ fontSize: "1.35rem" }}>Applications</h1>
           <p className="muted" style={{ fontSize: "0.875rem" }}>
-            {items.length} in your pipeline
+            {reviewCount > 0
+              ? `${reviewCount} to review · ${appliedCount} applied`
+              : `${appliedCount} applied in your pipeline`}
           </p>
         </div>
       </div>
@@ -115,7 +124,9 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
               </h3>
               {byCol[col.key].length === 0 ? (
                 <p className="dim" style={{ fontSize: "0.75rem", padding: "0.5rem 0" }}>
-                  Drop applications here
+                  {col.key === "review"
+                    ? "Matched jobs land here until you apply"
+                    : "Drop applications here"}
                 </p>
               ) : null}
               {byCol[col.key].map((a) => (
