@@ -2141,13 +2141,14 @@ p {
 /* ??? Liquid metal hero (landing) ??? */
 .lmh {
   position: relative;
+  z-index: 1;
   display: flex;
   min-height: 100vh;
   width: 100%;
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  background: #000;
+  background: transparent;
   padding: 6rem 1.5rem;
 }
 
@@ -2345,16 +2346,63 @@ p {
 @media (prefers-reduced-motion: reduce) {
   .lmh-orb,
   .lmh-orb-spin,
-  .lmh-marquee-track {
+  .lmh-marquee-track,
+  .lp-fixed-blob-orb,
+  .lp-fixed-blob-spin {
     animation: none !important;
   }
 }
 
 /* ??? Landing page sections (below liquid-metal hero) ??? */
 .lp-page {
-  background: #000;
+  position: relative;
+  min-height: 100vh;
+  background: transparent;
   color: #fff;
   overflow-x: clip;
+}
+
+.lp-fixed-blob {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  z-index: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
+.lp-fixed-blob-orb {
+  position: relative;
+  width: min(90vw, 780px);
+  height: min(90vw, 780px);
+}
+
+.lp-fixed-blob-spin {
+  position: absolute;
+  inset: -10%;
+  width: 120%;
+  height: 120%;
+}
+
+.lp-fixed-blob-light {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  mix-blend-mode: screen;
+  background:
+    radial-gradient(circle at 32% 28%, rgba(212, 175, 55, 0.18), transparent 42%),
+    radial-gradient(circle at 70% 65%, rgba(96, 165, 250, 0.16), transparent 45%);
+}
+
+.lp-foreground {
+  position: relative;
+  z-index: 1;
 }
 
 .lp-page .lmh-strip-top {
@@ -2424,7 +2472,8 @@ p {
 }
 
 .lp-section {
-  background: #000;
+  position: relative;
+  background: rgba(0, 0, 0, 0.72);
   padding: 120px 1.5rem;
 }
 
@@ -2456,7 +2505,8 @@ p {
 }
 
 .lp-stats {
-  background: #080808;
+  position: relative;
+  background: rgba(0, 0, 0, 0.75);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
   padding: 2.75rem 1.5rem;
@@ -2737,6 +2787,7 @@ p {
 }
 
 .lp-portals {
+  background: rgba(0, 0, 0, 0.78);
   padding-top: 80px;
   padding-bottom: 80px;
   overflow: hidden;
@@ -2909,7 +2960,7 @@ p {
 .lp-final {
   position: relative;
   overflow: hidden;
-  background: #000;
+  background: rgba(0, 0, 0, 0.65);
   padding: 140px 1.5rem;
   text-align: center;
 }
@@ -2954,7 +3005,8 @@ p {
 }
 
 .lp-footer {
-  background: #080808;
+  position: relative;
+  background: rgba(8, 8, 8, 0.88);
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   padding: 4rem 1.5rem 1.5rem;
 }
