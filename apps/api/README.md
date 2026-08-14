@@ -51,7 +51,7 @@ Stub endpoints return **501** until implemented. Auth works for real.
 | matches | **`POST /matches/search`**, **`POST /matches/score`**, **`GET /matches`**, **`GET /matches/{id}`**, **`POST /matches/{id}/tailor`** |
 | applications | list, get, apply, update, withdraw |
 | notifications | **`GET /notifications`**, **`PATCH /notifications/{id}/read`** |
-| scanner | trigger, **embed-jobs** |w
+| scanner | trigger, **embed-jobs**, **status** |w
 
 Interactive docs: http://localhost:8000/docs
 

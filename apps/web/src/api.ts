@@ -263,6 +263,17 @@ export const api = {
       { method: "POST" },
     );
   },
+  agentStatus() {
+    return request<{
+      state: string;
+      scanner_enabled: boolean;
+      last_scan_at: string | null;
+      jobs_scanned_today: number;
+      high_match_count: number;
+      high_match_threshold: number;
+      server_time: string;
+    }>("/scanner/status");
+  },
   triggerEmbedJobs() {
     return request<{ status: string; task_id: string; message: string }>(
       "/scanner/embed-jobs",

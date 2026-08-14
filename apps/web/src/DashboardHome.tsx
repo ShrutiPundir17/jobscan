@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { AgentStatusPanel } from "./AgentStatusPanel";
 import { api } from "./api";
 import type { ApplicationItem, PersistedMatch, UserProfile } from "./types";
 
@@ -91,15 +92,20 @@ export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
 
   return (
     <div className="fade-in">
-      <div className="row space-between" style={{ marginBottom: "0.35rem", flexWrap: "wrap" }}>
-        <h1 style={{ fontSize: "1.5rem" }}>Welcome back, {name}</h1>
-        {matches.length > 0 ? (
-          <span className="live-ticker">{matches.length} new matches found</span>
-        ) : null}
+      <div className="dash-hero">
+        <div className="dash-hero-copy">
+          <div className="row space-between" style={{ marginBottom: "0.35rem", flexWrap: "wrap", gap: "0.5rem" }}>
+            <h1 style={{ fontSize: "1.5rem" }}>Welcome back, {name}</h1>
+            {matches.length > 0 ? (
+              <span className="live-ticker">{matches.length} new matches found</span>
+            ) : null}
+          </div>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            Your agent is hunting. Here’s today’s snapshot.
+          </p>
+        </div>
+        <AgentStatusPanel />
       </div>
-      <p className="muted" style={{ marginBottom: "1.25rem" }}>
-        Your agent is hunting. Here’s today’s snapshot.
-      </p>
 
       <div className="stats-row">
         <button type="button" className="stat-card" onClick={() => onNavigate("matches")}>

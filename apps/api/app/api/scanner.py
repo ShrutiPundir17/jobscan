@@ -1,18 +1,87 @@
+from datetime import UTC, datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
-from app.models import User
+from app.config import settings
+from app.db import get_db
+from app.models import Application, Job, User
 from app.tasks.job_embeddings import embed_pending_jobs
 from app.tasks.job_scanner import scan_jobs
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
+
+IST = timezone(timedelta(hours=5, minutes=30))
 
 
 class TriggerResponse(BaseModel):
     status: str
     task_id: str
     message: str
+
+
+class AgentStatusResponse(BaseModel):
+    state: str
+    scanner_enabled: bool
+    last_scan_at: datetime | None
+    jobs_scanned_today: int
+    high_match_count: int
+    high_match_threshold: int = 85
+    server_time: datetime
+
+
+@router.get("/status", response_model=AgentStatusResponse)
+def agent_status(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AgentStatusResponse:
+    """Live agent metrics for the dashboard status panel."""
+    now_utc = datetime.now(UTC)
+    start_ist = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
+    start_utc = start_ist.astimezone(UTC)
+
+    last_scan_at = db.scalar(select(func.max(Job.created_at)))
+    jobs_scanned_today = int(
+        db.scalar(
+            select(func.count()).select_from(Job).where(Job.created_at >= start_utc)
+        )
+        or 0
+    )
+    high_match_count = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Application)
+            .where(
+                Application.user_id == current_user.id,
+                Application.match_score.is_not(None),
+                Application.match_score >= 85,
+            )
+        )
+        or 0
+    )
+
+    if not settings.scanner_enabled:
+        state = "paused"
+    elif last_scan_at is not None:
+        # Fresh enough activity → active; otherwise idle between beat cycles.
+        aware = last_scan_at if last_scan_at.tzinfo else last_scan_at.replace(tzinfo=UTC)
+        age = now_utc - aware
+        state = "active" if age <= timedelta(hours=3) else "idle"
+    else:
+        state = "idle"
+
+    return AgentStatusResponse(
+        state=state,
+        scanner_enabled=settings.scanner_enabled,
+        last_scan_at=last_scan_at,
+        jobs_scanned_today=jobs_scanned_today,
+        high_match_count=high_match_count,
+        high_match_threshold=85,
+        server_time=now_utc,
+    )
 
 
 @router.post("/trigger", response_model=TriggerResponse)
