@@ -272,6 +272,7 @@ export const api = {
       high_match_count: number;
       high_match_threshold: number;
       server_time: string;
+      last_scan_status?: string | null;
     }>("/scanner/status");
   },
   triggerEmbedJobs() {

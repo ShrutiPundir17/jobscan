@@ -182,39 +182,39 @@ def scan_jobs(
     locations: list[str] | None = None,
 ) -> dict[str, Any]:
     """Celery entrypoint — scrape portals (optional per-user keywords/locations)."""
+    from app.services.scan_status import record_scan_event
+
     logger.info(
         "scan_jobs_started keywords=%s locations=%s",
         keywords,
         locations,
     )
-    result = asyncio.run(_run_scan(keywords=keywords, locations=locations))
-    logger.info(
-        "scan_jobs_finished status=%s scraped=%s ingest=%s errors=%s",
-        result.get("status"),
-        result.get("scraped"),
-        result.get("ingest"),
-        len(result.get("errors") or []),
-    )
+    record_scan_event(status="running", scraped=0, bump_daily=False)
+    result: dict[str, Any] = {"status": "failed", "scraped": 0, "errors": []}
     try:
-        from datetime import UTC, datetime
-
-        from redis import Redis
-
-        client = Redis.from_url(settings.redis_url)
-        now_iso = datetime.now(UTC).isoformat()
-        scraped = int(result.get("scraped") or 0)
-        pipe = client.pipeline()
-        pipe.set("jobagent:last_scan_at", now_iso)
-        pipe.set("jobagent:last_scan_status", str(result.get("status") or "ok"))
-        pipe.set("jobagent:last_scan_scraped", str(scraped))
-        # Rolling “seen today” counter (UTC day key).
-        day_key = f"jobagent:scanned_day:{datetime.now(UTC).strftime('%Y-%m-%d')}"
-        pipe.incrby(day_key, scraped)
-        pipe.expire(day_key, 60 * 60 * 48)
-        pipe.execute()
-        client.close()
+        result = asyncio.run(_run_scan(keywords=keywords, locations=locations))
+        logger.info(
+            "scan_jobs_finished status=%s scraped=%s ingest=%s errors=%s",
+            result.get("status"),
+            result.get("scraped"),
+            result.get("ingest"),
+            len(result.get("errors") or []),
+        )
     except Exception as exc:  # noqa: BLE001
-        logger.warning("scan_status_redis_failed err=%s", exc)
+        logger.exception("scan_jobs_crashed err=%s", exc)
+        result = {
+            "status": "failed",
+            "scraped": 0,
+            "errors": [str(exc)],
+            "ingest": {"inserted": 0, "updated": 0, "skipped": 0},
+        }
+        raise
+    finally:
+        record_scan_event(
+            status=str(result.get("status") or "failed"),
+            scraped=int(result.get("scraped") or 0),
+            bump_daily=True,
+        )
 
     try:
         from app.tasks.job_embeddings import embed_pending_jobs

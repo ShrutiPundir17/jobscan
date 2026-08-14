@@ -2,13 +2,14 @@ from datetime import UTC, datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user
 from app.config import settings
 from app.db import get_db
 from app.models import Application, Job, User
+from app.services.scan_status import read_scan_telemetry, record_scan_event
 from app.tasks.job_embeddings import embed_pending_jobs
 from app.tasks.job_scanner import scan_jobs
 
@@ -44,45 +45,38 @@ def agent_status(
     start_ist = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
     start_utc = start_ist.astimezone(UTC)
 
-    # Prefer explicit scan-run telemetry from Redis; fall back to newest job row.
-    last_scan_at: datetime | None = None
-    last_scan_status: str | None = None
-    scanned_today_redis: int | None = None
-    try:
-        from redis import Redis
+    tel = read_scan_telemetry()
+    last_scan_status = tel.get("last_scan_status")
+    if not isinstance(last_scan_status, str):
+        last_scan_status = None
 
-        client = Redis.from_url(settings.redis_url)
-        raw_at = client.get("jobagent:last_scan_at")
-        raw_status = client.get("jobagent:last_scan_status")
-        day_key = f"jobagent:scanned_day:{now_utc.strftime('%Y-%m-%d')}"
-        raw_day = client.get(day_key)
-        client.close()
-        if raw_at:
-            text = raw_at.decode() if isinstance(raw_at, bytes) else str(raw_at)
-            last_scan_at = datetime.fromisoformat(text)
-        if raw_status:
-            last_scan_status = (
-                raw_status.decode() if isinstance(raw_status, bytes) else str(raw_status)
-            )
-        if raw_day is not None:
-            scanned_today_redis = int(
-                raw_day.decode() if isinstance(raw_day, bytes) else raw_day
-            )
-    except Exception:  # noqa: BLE001
-        last_scan_at = None
+    last_scan_at: datetime | None = None
+    raw_at = tel.get("last_scan_at")
+    if isinstance(raw_at, str) and raw_at:
+        try:
+            last_scan_at = datetime.fromisoformat(raw_at)
+        except ValueError:
+            last_scan_at = None
 
     if last_scan_at is None:
-        last_scan_at = db.scalar(select(func.max(Job.created_at)))
+        # Prefer updated_at — upserts refresh this even when no new rows are inserted.
+        last_scan_at = db.scalar(select(func.max(Job.updated_at))) or db.scalar(
+            select(func.max(Job.created_at))
+        )
 
-    jobs_inserted_today = int(
+    scanned_today_redis = tel.get("scanned_today")
+    jobs_touched_today = int(
         db.scalar(
-            select(func.count()).select_from(Job).where(Job.created_at >= start_utc)
+            select(func.count())
+            .select_from(Job)
+            .where(or_(Job.created_at >= start_utc, Job.updated_at >= start_utc))
         )
         or 0
     )
-    jobs_scanned_today = (
-        scanned_today_redis if scanned_today_redis is not None else jobs_inserted_today
-    )
+    if isinstance(scanned_today_redis, int):
+        jobs_scanned_today = scanned_today_redis
+    else:
+        jobs_scanned_today = jobs_touched_today
 
     high_match_count = int(
         db.scalar(
@@ -97,10 +91,10 @@ def agent_status(
         or 0
     )
 
-    # Agent is "active" whenever scanning is enabled — the beat schedule is running.
-    # "idle" only when scanning is off; "degraded" if the last run reported errors.
     if not settings.scanner_enabled:
         state = "paused"
+    elif last_scan_status == "running":
+        state = "active"
     elif last_scan_status in {"partial", "failed"}:
         state = "degraded"
     else:
@@ -136,6 +130,7 @@ def trigger_scan(current_user: User = Depends(get_current_user)) -> TriggerRespo
         for loc in (current_user.preferred_locations or [])
         if str(loc).strip()
     ]
+    record_scan_event(status="queued", scraped=0, bump_daily=False)
     async_result = scan_jobs.delay(
         keywords=roles or None,
         locations=locs or None,

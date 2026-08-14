@@ -9,6 +9,7 @@ type AgentStatus = {
   high_match_count: number;
   high_match_threshold: number;
   server_time: string;
+  last_scan_status?: string | null;
 };
 
 function formatLocalClock(date: Date): string {
@@ -24,7 +25,8 @@ function formatLocalClock(date: Date): string {
   return `${get("hour")}:${get("minute")}:${get("second")} ${tz}`;
 }
 
-function formatLastScan(iso: string | null, nowMs: number): string {
+function formatLastScan(iso: string | null, nowMs: number, status?: string | null): string {
+  if (status === "running" || status === "queued") return "in progress";
   if (!iso) return "never";
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "unknown";
@@ -69,7 +71,7 @@ export function AgentStatusPanel() {
     }
 
     void load();
-    const poll = window.setInterval(() => void load(), 30_000);
+    const poll = window.setInterval(() => void load(), 15_000);
     return () => {
       cancelled = true;
       window.clearInterval(poll);
@@ -94,7 +96,9 @@ export function AgentStatusPanel() {
     },
     {
       label: "Last scan",
-      value: status ? formatLastScan(status.last_scan_at, now.getTime()) : "…",
+      value: status
+        ? formatLastScan(status.last_scan_at, now.getTime(), status.last_scan_status)
+        : "…",
     },
     {
       label: "Scanned today",
