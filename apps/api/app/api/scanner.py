@@ -31,6 +31,7 @@ class AgentStatusResponse(BaseModel):
     high_match_count: int
     high_match_threshold: int = 85
     server_time: datetime
+    last_scan_status: str | None = None
 
 
 @router.get("/status", response_model=AgentStatusResponse)
@@ -43,13 +44,46 @@ def agent_status(
     start_ist = datetime.now(IST).replace(hour=0, minute=0, second=0, microsecond=0)
     start_utc = start_ist.astimezone(UTC)
 
-    last_scan_at = db.scalar(select(func.max(Job.created_at)))
-    jobs_scanned_today = int(
+    # Prefer explicit scan-run telemetry from Redis; fall back to newest job row.
+    last_scan_at: datetime | None = None
+    last_scan_status: str | None = None
+    scanned_today_redis: int | None = None
+    try:
+        from redis import Redis
+
+        client = Redis.from_url(settings.redis_url)
+        raw_at = client.get("jobagent:last_scan_at")
+        raw_status = client.get("jobagent:last_scan_status")
+        day_key = f"jobagent:scanned_day:{now_utc.strftime('%Y-%m-%d')}"
+        raw_day = client.get(day_key)
+        client.close()
+        if raw_at:
+            text = raw_at.decode() if isinstance(raw_at, bytes) else str(raw_at)
+            last_scan_at = datetime.fromisoformat(text)
+        if raw_status:
+            last_scan_status = (
+                raw_status.decode() if isinstance(raw_status, bytes) else str(raw_status)
+            )
+        if raw_day is not None:
+            scanned_today_redis = int(
+                raw_day.decode() if isinstance(raw_day, bytes) else raw_day
+            )
+    except Exception:  # noqa: BLE001
+        last_scan_at = None
+
+    if last_scan_at is None:
+        last_scan_at = db.scalar(select(func.max(Job.created_at)))
+
+    jobs_inserted_today = int(
         db.scalar(
             select(func.count()).select_from(Job).where(Job.created_at >= start_utc)
         )
         or 0
     )
+    jobs_scanned_today = (
+        scanned_today_redis if scanned_today_redis is not None else jobs_inserted_today
+    )
+
     high_match_count = int(
         db.scalar(
             select(func.count())
@@ -63,15 +97,14 @@ def agent_status(
         or 0
     )
 
+    # Agent is "active" whenever scanning is enabled — the beat schedule is running.
+    # "idle" only when scanning is off; "degraded" if the last run reported errors.
     if not settings.scanner_enabled:
         state = "paused"
-    elif last_scan_at is not None:
-        # Fresh enough activity → active; otherwise idle between beat cycles.
-        aware = last_scan_at if last_scan_at.tzinfo else last_scan_at.replace(tzinfo=UTC)
-        age = now_utc - aware
-        state = "active" if age <= timedelta(hours=3) else "idle"
+    elif last_scan_status in {"partial", "failed"}:
+        state = "degraded"
     else:
-        state = "idle"
+        state = "active"
 
     return AgentStatusResponse(
         state=state,
@@ -81,6 +114,7 @@ def agent_status(
         high_match_count=high_match_count,
         high_match_threshold=85,
         server_time=now_utc,
+        last_scan_status=last_scan_status,
     )
 
 

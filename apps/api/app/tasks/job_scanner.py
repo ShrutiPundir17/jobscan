@@ -196,6 +196,27 @@ def scan_jobs(
         len(result.get("errors") or []),
     )
     try:
+        from datetime import UTC, datetime
+
+        from redis import Redis
+
+        client = Redis.from_url(settings.redis_url)
+        now_iso = datetime.now(UTC).isoformat()
+        scraped = int(result.get("scraped") or 0)
+        pipe = client.pipeline()
+        pipe.set("jobagent:last_scan_at", now_iso)
+        pipe.set("jobagent:last_scan_status", str(result.get("status") or "ok"))
+        pipe.set("jobagent:last_scan_scraped", str(scraped))
+        # Rolling “seen today” counter (UTC day key).
+        day_key = f"jobagent:scanned_day:{datetime.now(UTC).strftime('%Y-%m-%d')}"
+        pipe.incrby(day_key, scraped)
+        pipe.expire(day_key, 60 * 60 * 48)
+        pipe.execute()
+        client.close()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("scan_status_redis_failed err=%s", exc)
+
+    try:
         from app.tasks.job_embeddings import embed_pending_jobs
 
         embed_pending_jobs.delay()

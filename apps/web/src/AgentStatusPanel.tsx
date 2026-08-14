@@ -88,7 +88,7 @@ export function AgentStatusPanel() {
       tone:
         status?.state === "active"
           ? "ok"
-          : status?.state === "paused" || error
+          : status?.state === "paused" || status?.state === "degraded" || error
             ? "warn"
             : "dim",
     },
@@ -116,7 +116,11 @@ export function AgentStatusPanel() {
         <span className="agent-status-title">Agent status</span>
         <span
           className={`agent-status-dot ${
-            status?.state === "active" ? "on" : error ? "err" : "idle"
+            status?.state === "active"
+              ? "on"
+              : error || status?.state === "degraded"
+                ? "err"
+                : "idle"
           }`}
           aria-hidden
         />
