@@ -1,4 +1,3 @@
-import { LiquidMetal, liquidMetalPresets } from "@paper-design/shaders-react";
 import {
   motion,
   useInView,
@@ -182,9 +181,6 @@ type Props = {
 };
 
 export function LandingSections({ onSignup }: Props) {
-  const reduce = useReducedMotion();
-  const preset = (liquidMetalPresets[2]?.params ?? {}) as Record<string, unknown>;
-
   function scrollTo(id: string) {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
@@ -387,23 +383,6 @@ export function LandingSections({ onSignup }: Props) {
 
       {/* Section 6 — Final CTA */}
       <section className="lp-final" id="cta">
-        <div className="lp-final-blob" aria-hidden>
-          <LiquidMetal
-            {...preset}
-            shape="metaballs"
-            colorBack="#000000"
-            colorTint="#C0C0C0"
-            shiftRed={0.22}
-            shiftBlue={0.28}
-            softness={0.35}
-            distortion={0.12}
-            contour={0.45}
-            speed={reduce ? 0 : 0.2}
-            scale={1.2}
-            fit="contain"
-            style={{ width: "100%", height: "100%", opacity: 0.15 }}
-          />
-        </div>
         <FadeIn className="lp-final-inner" y={20}>
           <h2 className="lp-final-title">Stop applying manually.</h2>
           <p className="lp-final-sub">Let your agent do it.</p>

@@ -1,3 +1,4 @@
+import { LiquidMetalBackdrop } from "./components/LiquidMetalBackdrop";
 import { LiquidMetalHero } from "./components/LiquidMetalHero";
 import { LandingFooter, LandingNav, LandingSections } from "./LandingSections";
 
@@ -9,6 +10,7 @@ type Props = {
 export function LandingPage({ onLogin, onSignup }: Props) {
   return (
     <div className="lp-page" id="top">
+      <LiquidMetalBackdrop />
       <LandingNav onLogin={onLogin} onSignup={onSignup} />
       <LiquidMetalHero
         align="start"
