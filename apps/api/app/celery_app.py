@@ -22,10 +22,10 @@ celery.conf.update(
     timezone="UTC",
     enable_utc=True,
     beat_schedule={
-        # Job portal crawl — every 2 hours at :00 UTC
-        "scan-jobs-every-2-hours": {
+        # Job portal crawl — every hour at :00 UTC
+        "scan-jobs-every-hour": {
             "task": "app.tasks.job_scanner.scan_jobs",
-            "schedule": crontab(minute=0, hour="*/2"),
+            "schedule": crontab(minute=0),
         },
         # Backfill / catch-up job embeddings for Stage 1 matching
         "embed-pending-jobs-every-30-min": {

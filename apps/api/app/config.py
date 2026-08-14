@@ -27,7 +27,7 @@ class Settings(BaseSettings):
 
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
 
-    # Job scanner (Celery beat every 2 hours)
+    # Job scanner (Celery beat every hour)
     scanner_enabled: bool = True
     scanner_keywords: str = "python developer"
     scanner_locations: str = "bangalore"
