@@ -17,6 +17,8 @@ from app.schemas.auth import (
     ForgotPasswordResponse,
     ForgotUsernameRequest,
     ForgotUsernameResponse,
+    GoogleAuthRequest,
+    GoogleConfigResponse,
     ResetPasswordRequest,
     TokenResponse,
     UserLogin,
@@ -24,6 +26,7 @@ from app.schemas.auth import (
     UserResponse,
 )
 from app.security import create_access_token, hash_password, verify_password
+from app.services.google_auth import GoogleAuthError, google_oauth_configured, resolve_google_profile
 from app.services.notify_email import send_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -320,3 +323,60 @@ def forgot_username(
         message="Matched your phone. Your login email is shown below.",
         login_email=user.email,
     )
+
+
+@router.get("/google/config", response_model=GoogleConfigResponse)
+def google_config() -> GoogleConfigResponse:
+    """Public config so the SPA can enable the Google button."""
+    client_id = (settings.google_oauth_client_id or "").strip() or None
+    return GoogleConfigResponse(enabled=bool(client_id), client_id=client_id)
+
+
+@router.post("/google", response_model=TokenResponse)
+def google_login(
+    payload: GoogleAuthRequest,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    """Sign in or register with Google (GIS ID token or OAuth access token)."""
+    if not google_oauth_configured():
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Google Sign-In is not configured yet. Use email login for now.",
+        )
+
+    try:
+        profile = resolve_google_profile(
+            id_token_value=payload.id_token,
+            access_token=payload.access_token,
+        )
+    except GoogleAuthError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+    email = profile["email"]
+    full_name = profile["full_name"].strip() or None
+    user = db.scalar(select(User).where(User.email == email))
+    if user is None:
+        # Random unusable password — account is Google-auth only until they set one.
+        user = User(
+            email=email,
+            hashed_password=hash_password(secrets.token_urlsafe(32)),
+            full_name=full_name,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info("google_register email=%s", email)
+    elif full_name and not user.full_name:
+        user.full_name = full_name
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        logger.info("google_login email=%s", email)
+    else:
+        logger.info("google_login email=%s", email)
+
+    token = create_access_token(subject=user.id)
+    return TokenResponse(access_token=token)

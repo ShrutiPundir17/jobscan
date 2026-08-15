@@ -1,5 +1,6 @@
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { api, setToken } from "./api";
+import { requestGoogleAccessToken } from "./googleAuth";
 
 type Props = {
   onLoggedIn: () => void;
@@ -51,6 +52,25 @@ export function LoginPage({
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const cfg = await api.googleConfig();
+        if (!cancelled && cfg.enabled && cfg.client_id) {
+          setGoogleClientId(cfg.client_id);
+        }
+      } catch {
+        /* Google optional */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function goMode(next: Mode) {
     setMode(next);
@@ -162,6 +182,33 @@ export function LoginPage({
       setError(err instanceof Error ? err.message : "Could not reset password");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleGoogleSignIn() {
+    setError(null);
+    setInfo(null);
+    if (!googleClientId) {
+      setError(
+        "Google Sign-In is not configured yet. Use email and password, or ask the admin to add GOOGLE_OAUTH_CLIENT_ID.",
+      );
+      return;
+    }
+    setGoogleBusy(true);
+    try {
+      const accessToken = await requestGoogleAccessToken(googleClientId);
+      const res = await api.googleLogin({ access_token: accessToken });
+      setToken(res.access_token);
+      onLoggedIn();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Google Sign-In failed";
+      if (/popup_closed|access_denied|cancelled/i.test(msg)) {
+        setError("Google Sign-In was cancelled.");
+      } else {
+        setError(msg);
+      }
+    } finally {
+      setGoogleBusy(false);
     }
   }
 
@@ -435,10 +482,11 @@ export function LoginPage({
             <button
               type="button"
               className="btn btn-google btn-block"
-              onClick={() => setError("Google sign-in is coming soon.")}
+              disabled={loading || googleBusy}
+              onClick={() => void handleGoogleSignIn()}
             >
               <span className="g-dot" aria-hidden />
-              Continue with Google
+              {googleBusy ? "Connecting to Google…" : "Continue with Google"}
             </button>
           </form>
         ) : null}

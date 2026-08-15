@@ -76,6 +76,20 @@ export const api = {
       false,
     );
   },
+  googleConfig() {
+    return request<{ enabled: boolean; client_id: string | null }>(
+      "/auth/google/config",
+      { method: "GET" },
+      false,
+    );
+  },
+  googleLogin(payload: { access_token?: string; id_token?: string }) {
+    return request<{ access_token: string; token_type: string }>(
+      "/auth/google",
+      { method: "POST", body: JSON.stringify(payload) },
+      false,
+    );
+  },
   forgotPassword(email: string) {
     return request<{
       message: string;

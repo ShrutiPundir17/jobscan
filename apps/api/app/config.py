@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     max_upload_bytes: int = 5 * 1024 * 1024  # 5 MB
 
     google_api_key: str | None = None
+    # Google Sign-In (OAuth 2.0 Web Client ID from Google Cloud Console)
+    google_oauth_client_id: str | None = None
     gemini_model: str = "gemini-flash-latest"
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768

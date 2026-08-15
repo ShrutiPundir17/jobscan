@@ -37,6 +37,8 @@ docker compose exec backend alembic upgrade head
 | POST | `/auth/forgot-password` | no |
 | POST | `/auth/reset-password` | no |
 | POST | `/auth/forgot-username` | no |
+| GET | `/auth/google/config` | no |
+| POST | `/auth/google` | no |
 | GET | `/auth/me` | Bearer JWT |
 
 ## Route skeleton

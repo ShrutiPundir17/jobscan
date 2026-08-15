@@ -68,3 +68,15 @@ class ForgotUsernameResponse(BaseModel):
     message: str
     # Only present when outbound email is not configured and a match was found.
     login_email: str | None = None
+
+
+class GoogleAuthRequest(BaseModel):
+    """GIS credential (ID token) and/or OAuth access token from the browser."""
+
+    id_token: str | None = Field(default=None, max_length=4096)
+    access_token: str | None = Field(default=None, max_length=4096)
+
+
+class GoogleConfigResponse(BaseModel):
+    enabled: bool
+    client_id: str | None = None
