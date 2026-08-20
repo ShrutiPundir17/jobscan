@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import Application, ApplicationStatus, Job, Resume, User
 from app.services.embeddings import build_job_embedding_text, build_resume_embedding_text
-from app.services.gemini_client import generate_content_with_retries, require_gemini_client
+from app.services.gemini_client import generate_content_with_retries
 from app.services.match_search import MatchCandidate, resolve_resume_for_match, search_similar_jobs
 
 logger = logging.getLogger(__name__)
@@ -81,10 +81,6 @@ class DeepScoreResult:
     persisted: bool = False
     application_id: UUID | None = None
     status: ApplicationStatus | None = None
-
-
-def _require_gemini_client():
-    return require_gemini_client(timeout_ms=60_000)
 
 
 def _clip(text: str, max_chars: int) -> str:
