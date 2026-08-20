@@ -32,6 +32,9 @@ router = APIRouter(prefix="/matches", tags=["matches"])
 
 def _to_persisted_response(app) -> PersistedMatchResponse:
     bullets = app.tailored_bullets if isinstance(app.tailored_bullets, dict) else None
+    job = MatchJobSummary.model_validate(app.job)
+    if job.description and len(job.description) > 3500:
+        job = job.model_copy(update={"description": job.description[:3500].rstrip() + "…"})
     return PersistedMatchResponse(
         id=app.id,
         status=app.status.value,
@@ -43,7 +46,7 @@ def _to_persisted_response(app) -> PersistedMatchResponse:
         tailored_bullets=bullets,
         tailored_resume_text=app.tailored_resume_text,
         resume_id=app.resume_id,
-        job=MatchJobSummary.model_validate(app.job),
+        job=job,
         created_at=app.created_at,
         updated_at=app.updated_at,
     )

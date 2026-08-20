@@ -91,8 +91,10 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     }
   }
 
-  async function tailor(id: string) {
+  async function tailor(id: string): Promise<boolean> {
     setBusyId(id);
+    onError(null);
+    onMessage("Tailoring resume for this job — usually 15–40s…");
     try {
       const res = await api.tailorMatch(id);
       setItems((prev) =>
@@ -108,8 +110,11 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
         ),
       );
       onMessage(`Tailored for ${res.job.title} @ ${res.job.company}.`);
+      return true;
     } catch (err) {
       onError(err instanceof Error ? err.message : "Tailor failed");
+      onMessage(null);
+      return false;
     } finally {
       setBusyId(null);
     }
@@ -219,7 +224,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
                 })
               }
               onApply={() => void apply(m.id, m.job.url)}
-              onTailor={() => void tailor(m.id)}
+              onTailor={() => tailor(m.id)}
             />
           ))}
         </div>

@@ -83,6 +83,7 @@ export type MatchJob = {
   salary_max: number | null;
   currency: string | null;
   posted_at: string | null;
+  description?: string | null;
 };
 
 export type PersistedMatch = {

@@ -1699,7 +1699,7 @@ p {
 }
 
 .why-list li::before {
-  content: "? ";
+  content: "✓ ";
   font-weight: 700;
 }
 
@@ -1713,7 +1713,7 @@ p {
 }
 
 .gap-list li::before {
-  content: "? ";
+  content: "– ";
   font-weight: 700;
 }
 
@@ -1740,6 +1740,38 @@ p {
   flex-wrap: wrap;
   gap: 0.45rem;
   align-items: center;
+}
+
+.match-details {
+  display: grid;
+  gap: 0.85rem;
+  padding-top: 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.match-details-text {
+  margin: 0.35rem 0 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+}
+
+.match-jd {
+  max-height: 180px;
+  overflow: auto;
+}
+
+.match-tailored-pre {
+  margin: 0;
+  font-size: 0.72rem;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--bg);
+  padding: 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
 .dismiss-btn {

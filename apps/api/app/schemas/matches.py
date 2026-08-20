@@ -55,6 +55,7 @@ class MatchJobSummary(BaseModel):
     salary_max: int | None = None
     currency: str | None = None
     posted_at: datetime | None = None
+    description: str | None = None
 
     model_config = {"from_attributes": True}
 

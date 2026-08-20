@@ -6,7 +6,8 @@ type Props = {
   match: PersistedMatch;
   busy?: boolean;
   onApply: () => void;
-  onTailor: () => void;
+  /** Return true when tailor succeeded so the card can open Details. */
+  onTailor: () => void | Promise<boolean | void>;
   onDismiss?: () => void;
   onUndo?: () => void;
   dismissed?: boolean;
@@ -49,12 +50,32 @@ export function MatchCard({
   dismissed,
 }: Props) {
   const [details, setDetails] = useState(false);
+  const [copied, setCopied] = useState(false);
   const reasons = splitReasons(match.match_reasoning);
   const gaps = match.skill_gaps.slice(0, 2);
+  const allGaps = match.skill_gaps;
   const verdict = (match.verdict || "fit").toLowerCase();
   const score = match.match_score ?? 0;
   const scoreBand =
     score >= 80 ? "score-high" : score >= 60 ? "score-mid" : "score-low";
+  const jd = (match.job.description || "").trim();
+
+  async function handleTailor() {
+    const ok = await onTailor();
+    if (ok !== false) setDetails(true);
+  }
+
+  async function copyTailored() {
+    const text = match.tailored_resume_text;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      /* ignore */
+    }
+  }
 
   if (dismissed) {
     return (
@@ -138,35 +159,79 @@ export function MatchCard({
         <a className="btn btn-secondary btn-sm" href={match.job.url} target="_blank" rel="noreferrer">
           View Full JD
         </a>
-        <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onTailor}>
-          {busy ? "Working…" : match.tailored_resume_text ? "Re-tailor" : "Tailor"}
+        <button
+          type="button"
+          className="btn btn-soft btn-sm"
+          disabled={busy}
+          onClick={() => void handleTailor()}
+        >
+          {busy ? "Tailoring…" : match.tailored_resume_text ? "Re-tailor" : "Tailor"}
         </button>
         <button
           type="button"
-          className="btn btn-ghost btn-sm"
+          className="btn btn-soft btn-sm"
+          aria-expanded={details}
           onClick={() => setDetails((v) => !v)}
         >
           {details ? "Hide" : "Details"}
         </button>
       </div>
 
-      {details && match.tailored_resume_text ? (
-        <pre
-          className="fade-in"
-          style={{
-            margin: 0,
-            fontSize: "0.72rem",
-            whiteSpace: "pre-wrap",
-            maxHeight: 200,
-            overflow: "auto",
-            background: "var(--bg)",
-            padding: "0.75rem",
-            borderRadius: 8,
-            border: "1px solid var(--border)",
-          }}
-        >
-          {match.tailored_resume_text}
-        </pre>
+      {details ? (
+        <div className="match-details fade-in">
+          {match.match_reasoning ? (
+            <section>
+              <div className="block-label">Full match reasoning</div>
+              <p className="match-details-text">{match.match_reasoning}</p>
+            </section>
+          ) : null}
+
+          {allGaps.length ? (
+            <section>
+              <div className="block-label">All skill gaps</div>
+              <ul className="gap-list">
+                {allGaps.map((g) => (
+                  <li key={g}>{g}</li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+
+          {jd ? (
+            <section>
+              <div className="block-label">Job description</div>
+              <p className="match-details-text match-jd">{jd}</p>
+            </section>
+          ) : (
+            <section>
+              <div className="block-label">Job description</div>
+              <p className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
+                No JD text stored for this listing — use View Full JD on the employer site.
+              </p>
+            </section>
+          )}
+
+          <section>
+            <div className="row space-between" style={{ alignItems: "center", marginBottom: 6 }}>
+              <div className="block-label" style={{ margin: 0 }}>
+                Tailored resume
+              </div>
+              {match.tailored_resume_text ? (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => void copyTailored()}>
+                  {copied ? "Copied" : "Copy"}
+                </button>
+              ) : null}
+            </div>
+            {match.tailored_resume_text ? (
+              <pre className="match-tailored-pre">{match.tailored_resume_text}</pre>
+            ) : (
+              <p className="muted" style={{ fontSize: "0.8rem", marginTop: 4 }}>
+                No tailored version yet. Click <strong>Tailor</strong> to rewrite your resume for
+                this role (takes ~15–40s).
+              </p>
+            )}
+          </section>
+        </div>
       ) : null}
     </article>
   );
