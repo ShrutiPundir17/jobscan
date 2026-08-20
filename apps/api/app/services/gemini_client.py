@@ -13,17 +13,18 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Prefer configured model, then stable Flash variants that are usually less overloaded.
+# Prefer configured model, then current Flash variants.
 _DEFAULT_FALLBACKS = (
-    "gemini-2.0-flash",
-    "gemini-2.0-flash-lite",
-    "gemini-1.5-flash",
+    "gemini-3.6-flash",
     "gemini-flash-latest",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+    "gemini-3.5-flash-lite",
 )
 
 
 def gemini_model_candidates(primary: str | None = None) -> list[str]:
-    preferred = (primary or settings.gemini_model or "gemini-2.0-flash").strip()
+    preferred = (primary or settings.gemini_model or "gemini-3.6-flash").strip()
     out: list[str] = []
     for name in (preferred, *_DEFAULT_FALLBACKS):
         if name and name not in out:
@@ -61,6 +62,21 @@ def _is_retryable(exc: BaseException) -> bool:
     )
 
 
+def _is_model_unavailable(exc: BaseException) -> bool:
+    """Retired / unknown model — skip to the next candidate immediately."""
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "404",
+            "not_found",
+            "no longer available",
+            "is not found",
+            "not supported",
+        )
+    )
+
+
 def generate_content_with_retries(
     *,
     contents: str,
@@ -73,11 +89,13 @@ def generate_content_with_retries(
     Call Gemini with exponential backoff and model fallbacks.
 
     Retries transient 503 / high-demand / rate-limit errors across several Flash models.
+    Skips immediately to the next model when a model ID is retired (404).
     """
     gemini = client or require_gemini_client()
     last_exc: Exception | None = None
+    candidates = gemini_model_candidates(model)
 
-    for model_name in gemini_model_candidates(model):
+    for model_name in candidates:
         for attempt in range(max_attempts_per_model):
             try:
                 response = gemini.models.generate_content(
@@ -85,7 +103,7 @@ def generate_content_with_retries(
                     contents=contents,
                     config=config or {},
                 )
-                if attempt > 0 or model_name != gemini_model_candidates(model)[0]:
+                if attempt > 0 or model_name != candidates[0]:
                     logger.info(
                         "gemini_ok model=%s attempt=%s",
                         model_name,
@@ -94,6 +112,13 @@ def generate_content_with_retries(
                 return response
             except Exception as exc:  # noqa: BLE001
                 last_exc = exc
+                if _is_model_unavailable(exc):
+                    logger.warning(
+                        "gemini_model_unavailable model=%s err=%s — trying next",
+                        model_name,
+                        exc,
+                    )
+                    break
                 retryable = _is_retryable(exc)
                 logger.warning(
                     "gemini_failed model=%s attempt=%s retryable=%s err=%s",
