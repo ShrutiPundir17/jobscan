@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     google_api_key: str | None = None
     # Google Sign-In (OAuth 2.0 Web Client ID from Google Cloud Console)
     google_oauth_client_id: str | None = None
-    gemini_model: str = "gemini-flash-latest"
+    gemini_model: str = "gemini-2.0-flash"
     embedding_model: str = "gemini-embedding-001"
     embedding_dimensions: int = 768
 

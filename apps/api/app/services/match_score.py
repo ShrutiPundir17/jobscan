@@ -15,13 +15,13 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import HTTPException, status
-from google import genai
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import Application, ApplicationStatus, Job, Resume, User
 from app.services.embeddings import build_job_embedding_text, build_resume_embedding_text
+from app.services.gemini_client import generate_content_with_retries, require_gemini_client
 from app.services.match_search import MatchCandidate, resolve_resume_for_match, search_similar_jobs
 
 logger = logging.getLogger(__name__)
@@ -83,17 +83,8 @@ class DeepScoreResult:
     status: ApplicationStatus | None = None
 
 
-def _require_gemini_client() -> genai.Client:
-    if not settings.google_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GOOGLE_API_KEY is not configured. Add your Google AI Studio key to .env.",
-        )
-    # Fail fast instead of hanging the API worker on a stuck Google call.
-    return genai.Client(
-        api_key=settings.google_api_key,
-        http_options={"timeout": 60_000},
-    )
+def _require_gemini_client():
+    return require_gemini_client(timeout_ms=60_000)
 
 
 def _clip(text: str, max_chars: int) -> str:
@@ -154,46 +145,23 @@ def _parse_score_payload(raw: str) -> dict[str, Any]:
 
 
 def score_job_with_llm(resume: Resume, job: Job) -> dict[str, Any]:
-    import time
-
-    client = _require_gemini_client()
     prompt = _build_score_prompt(resume, job)
-    last_exc: Exception | None = None
-    response = None
-    # Gemini often returns 503 under load — retry a few times before skipping the job.
-    for attempt in range(4):
-        try:
-            response = client.models.generate_content(
-                model=settings.gemini_model,
-                contents=prompt,
-                config={
-                    "temperature": 0.2,
-                    "response_mime_type": "application/json",
-                },
-            )
-            break
-        except Exception as exc:  # noqa: BLE001
-            last_exc = exc
-            msg = str(exc)
-            retryable = (
-                "503" in msg
-                or "UNAVAILABLE" in msg
-                or "high demand" in msg.lower()
-                or "429" in msg
-                or "RESOURCE_EXHAUSTED" in msg
-            )
-            if retryable and attempt < 3:
-                time.sleep(1.5 * (2**attempt))
-                continue
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail=f"Gemini match scoring failed: {exc}",
-            ) from exc
-    else:
+    try:
+        response = generate_content_with_retries(
+            contents=prompt,
+            config={
+                "temperature": 0.2,
+                "response_mime_type": "application/json",
+            },
+            max_attempts_per_model=3,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Gemini match scoring failed: {last_exc}",
-        )
+            detail=f"Gemini match scoring failed: {exc}",
+        ) from exc
 
     content = getattr(response, "text", None)
     try:

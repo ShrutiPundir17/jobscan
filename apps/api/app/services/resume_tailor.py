@@ -13,12 +13,11 @@ import re
 from typing import Any
 
 from fastapi import HTTPException, status
-from google import genai
 from sqlalchemy.orm import Session, joinedload
 
-from app.config import settings
 from app.models import Application, Job, Resume, User
 from app.services.embeddings import build_job_embedding_text
+from app.services.gemini_client import generate_content_with_retries
 
 logger = logging.getLogger(__name__)
 
@@ -56,18 +55,6 @@ Return ONLY valid JSON:
   ]
 }
 """
-
-
-def _require_gemini_client() -> genai.Client:
-    if not settings.google_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GOOGLE_API_KEY is not configured.",
-        )
-    return genai.Client(
-        api_key=settings.google_api_key,
-        http_options={"timeout": 90_000},
-    )
 
 
 def _clip(text: str, max_chars: int) -> str:
@@ -268,16 +255,16 @@ def tailor_resume_for_job(resume: Resume, job: Job) -> dict[str, Any]:
         f"CANDIDATE RESUME (JSON):\n{json.dumps(candidate, ensure_ascii=False)[:14000]}"
     )
 
-    client = _require_gemini_client()
     try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
+        response = generate_content_with_retries(
             contents=prompt,
             config={
                 "temperature": 0.3,
                 "response_mime_type": "application/json",
             },
         )
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,

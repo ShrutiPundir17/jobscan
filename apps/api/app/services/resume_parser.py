@@ -7,10 +7,9 @@ from datetime import date
 from typing import Any, Literal
 
 from fastapi import HTTPException, status
-from google import genai
 from pydantic import BaseModel, Field
 
-from app.config import settings
+from app.services.gemini_client import generate_content_with_retries
 
 SeniorityLevel = Literal["intern", "junior", "mid", "senior", "lead", "executive", "unknown"]
 
@@ -202,15 +201,6 @@ def _normalize_payload(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _require_gemini_client() -> genai.Client:
-    if not settings.google_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="GOOGLE_API_KEY is not configured. Add your Google AI Studio key to .env.",
-        )
-    return genai.Client(api_key=settings.google_api_key)
-
-
 def parse_resume_text(raw_text: str) -> dict[str, Any]:
     text = (raw_text or "").strip()
     if not text:
@@ -219,7 +209,6 @@ def parse_resume_text(raw_text: str) -> dict[str, Any]:
             detail="Resume has no extracted text to parse.",
         )
 
-    client = _require_gemini_client()
     today = date.today().isoformat()
     prompt = (
         f"{SYSTEM_PROMPT}\n\n"
@@ -229,14 +218,15 @@ def parse_resume_text(raw_text: str) -> dict[str, Any]:
     )
 
     try:
-        response = client.models.generate_content(
-            model=settings.gemini_model,
+        response = generate_content_with_retries(
             contents=prompt,
             config={
                 "temperature": 0,
                 "response_mime_type": "application/json",
             },
         )
+    except HTTPException:
+        raise
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
