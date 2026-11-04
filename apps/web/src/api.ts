@@ -195,6 +195,18 @@ export const api = {
       method: "POST",
     });
   },
+  setPrimaryResume(id: string) {
+    return request<import("./types").ResumeItem>(`/resumes/${id}/set-primary`, {
+      method: "POST",
+    });
+  },
+  deleteResume(id: string) {
+    return request<{
+      id: string;
+      new_primary_id: string | null;
+      retired_auto_apply_plans: number;
+    }>(`/resumes/${id}`, { method: "DELETE" });
+  },
   listMatches(minScore?: number) {
     const q = minScore != null ? `?min_score=${minScore}` : "";
     return request<{

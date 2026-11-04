@@ -22,6 +22,7 @@ function healthFromResume(data: ParsedResumeData | null, hasEmbed: boolean): num
 
 export function ResumePage({ onMessage, onError }: Props) {
   const [resumes, setResumes] = useState<ResumeItem[]>([]);
+  const [rowBusy, setRowBusy] = useState<string | null>(null);
   const [tailored, setTailored] = useState<PersistedMatch[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [previewText, setPreviewText] = useState("");
@@ -49,10 +50,70 @@ export function ResumePage({ onMessage, onError }: Props) {
     void load();
   }, []);
 
+  // The resume being previewed — not necessarily the primary one.
   const primary = useMemo(
     () => resumes.find((r) => r.id === selectedId) ?? resumes[0] ?? null,
     [resumes, selectedId],
   );
+
+  function select(r: ResumeItem) {
+    setSelectedId(r.id);
+    setPreviewText(r.raw_text || r.filename || "");
+  }
+
+  async function makePrimary(r: ResumeItem) {
+    setRowBusy(r.id);
+    onError(null);
+    try {
+      await api.setPrimaryResume(r.id);
+      setResumes((prev) => prev.map((x) => ({ ...x, is_primary: x.id === r.id })));
+      onMessage(`${r.filename ?? "Resume"} is now used for matching and auto-apply.`);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not change primary resume");
+    } finally {
+      setRowBusy(null);
+    }
+  }
+
+  async function remove(r: ResumeItem) {
+    const others = resumes.filter((x) => x.id !== r.id);
+    const warning = !others.length
+      ? "This is your only resume — matching and auto-apply will stop until you upload another."
+      : r.is_primary
+        ? "It's your primary resume; the best remaining one will take over."
+        : "";
+    if (!window.confirm(`Delete ${r.filename ?? "this resume"}? This can't be undone. ${warning}`.trim())) {
+      return;
+    }
+    setRowBusy(r.id);
+    onError(null);
+    try {
+      const res = await api.deleteResume(r.id);
+      const next = others.map((x) => ({ ...x, is_primary: x.id === res.new_primary_id || (x.is_primary && !r.is_primary) }));
+      setResumes(next);
+      if (selectedId === r.id) {
+        const fallback = next.find((x) => x.is_primary) ?? next[0] ?? null;
+        setSelectedId(fallback?.id ?? null);
+        setPreviewText(fallback?.raw_text || fallback?.filename || "");
+      }
+      const promoted = next.find((x) => x.id === res.new_primary_id);
+      onMessage(
+        [
+          `Deleted ${r.filename ?? "resume"}.`,
+          promoted ? `${promoted.filename ?? "Another resume"} is now primary.` : "",
+          res.retired_auto_apply_plans
+            ? `${res.retired_auto_apply_plans} auto-apply plan(s) used it and need preparing again.`
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+      );
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Delete failed");
+    } finally {
+      setRowBusy(null);
+    }
+  }
 
   const parsed = (primary?.parsed_data as ParsedResumeData | null) ?? null;
   const health = healthFromResume(parsed, Boolean(primary?.has_embedding));
@@ -63,12 +124,20 @@ export function ResumePage({ onMessage, onError }: Props) {
     onError(null);
     try {
       const uploaded = await api.uploadResume(file);
+      // Show it right away so a later parse failure can't hide (or orphan) the upload.
+      setResumes((prev) => [uploaded, ...prev]);
+      setSelectedId(uploaded.id);
+      setPreviewText(uploaded.raw_text || uploaded.filename || "");
       const parsedR = await api.parseResume(uploaded.id);
       const embedded = await api.embedResume(parsedR.id);
-      setResumes((prev) => [embedded, ...prev]);
-      setSelectedId(embedded.id);
-      setPreviewText(embedded.raw_text || embedded.filename || "");
-      onMessage(`Uploaded and parsed ${embedded.filename ?? "resume"}.`);
+      // "Upload new" means "use this one from now on".
+      const primaryNow = await api.setPrimaryResume(embedded.id);
+      setResumes((prev) => [
+        primaryNow,
+        ...prev.filter((x) => x.id !== uploaded.id).map((x) => ({ ...x, is_primary: false })),
+      ]);
+      setPreviewText(primaryNow.raw_text || primaryNow.filename || "");
+      onMessage(`Uploaded ${primaryNow.filename ?? "resume"} — it's now your primary resume.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -113,6 +182,53 @@ export function ResumePage({ onMessage, onError }: Props) {
           </div>
 
           <div className="resume-side">
+            <div className="panel-block">
+              <div className="block-label" style={{ marginBottom: 10 }}>
+                Your resumes
+              </div>
+              <div className="stack" style={{ gap: "0.45rem" }}>
+                {resumes.map((r) => (
+                  <div className={`version-row ${r.id === primary.id ? "active" : ""}`} key={r.id}>
+                    <button
+                      type="button"
+                      className="resume-row-main"
+                      onClick={() => select(r)}
+                      aria-label={`Preview ${r.filename ?? "resume"}`}
+                    >
+                      <strong style={{ fontSize: "0.85rem" }}>{r.filename ?? "Untitled resume"}</strong>
+                      <div style={{ marginTop: 2 }}>
+                        {r.is_primary ? <span className="aa-pill done" style={{ marginLeft: 0 }}>Primary</span> : null}
+                        <span className={`aa-pill ${r.has_embedding ? "muted" : "warn"}`} style={r.is_primary ? undefined : { marginLeft: 0 }}>
+                          {r.has_embedding ? "Ready for matching" : r.parsed_data ? "Not embedded" : "Not parsed"}
+                        </span>
+                      </div>
+                    </button>
+                    <span className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+                      {!r.is_primary ? (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          disabled={rowBusy !== null || !r.has_embedding}
+                          title={r.has_embedding ? "Use this resume for matching and auto-apply" : "Parse this resume first"}
+                          onClick={() => void makePrimary(r)}
+                        >
+                          Make primary
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        className="btn btn-danger-ghost btn-sm"
+                        disabled={rowBusy !== null}
+                        onClick={() => void remove(r)}
+                      >
+                        {rowBusy === r.id ? "…" : "Delete"}
+                      </button>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             <div className="panel-block">
               <div className="block-label" style={{ marginBottom: 12 }}>
                 Resume health score

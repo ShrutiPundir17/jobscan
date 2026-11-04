@@ -48,8 +48,8 @@ Stub endpoints return **501** until implemented. Auth works for real.
 | Tag | Paths |
 |-----|-------|
 | users | `GET/PATCH /users/me` |
-| resumes | **upload, list, get** (live); delete, set-primary, parse still stubbed |
-| jobs | list, get |
+| resumes | upload, list, get, parse, embed, **set-primary, delete** (all live) |
+| jobs | list, get (still stubbed — return 501) |
 | matches | **`POST /matches/search`**, **`POST /matches/score`**, **`GET /matches`**, **`GET /matches/{id}`**, **`POST /matches/{id}/tailor`** |
 | applications | list, get, apply, update, withdraw |
 | notifications | **`GET /notifications`**, **`PATCH /notifications/{id}/read`** |

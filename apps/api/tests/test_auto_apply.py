@@ -57,7 +57,11 @@ def make_resume(db, user, **kw) -> Resume:
         filename=kw.pop("filename", "Shruti Resume.pdf"),
         file_data=kw.pop("file_data", b"%PDF-1.4 resume"),
         raw_text=kw.pop("raw_text", "Shruti Pundir\nPython developer"),
-        is_primary=True,
+        # One primary per user is DB-enforced: only the first resume is primary.
+        is_primary=kw.pop(
+            "is_primary",
+            db.scalar(select(Resume.id).where(Resume.user_id == user.id, Resume.is_primary)) is None,
+        ),
         **kw,
     )
     db.add(resume)
@@ -137,6 +141,8 @@ def last_attempt(queued, kind):
 
 def prepared(db, user, fake_agent, queued, client, **kw) -> Application:
     """An application taken through prepare -> awaiting_approval for real."""
+    if db.scalar(select(Resume.id).where(Resume.user_id == user.id)) is None:
+        make_resume(db, user)  # a ready plan always has a resume attached
     app = make_app(db, user, **kw)
     assert client.post(f"/applications/{app.id}/auto-apply/prepare", headers=auth(user)).status_code == 202
     assert svc.run_prepare(*last_attempt(queued, "prepare"))["status"] == "awaiting_approval"
