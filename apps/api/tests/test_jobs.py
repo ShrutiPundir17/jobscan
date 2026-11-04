@@ -45,7 +45,7 @@ def test_newest_first_and_nothing_internal_leaks(client, db):
     job(db, "Undated")  # falls back to scrape time (now) -> newest
     r = client.get("/jobs", headers=auth(user))
     assert r.status_code == 200
-    assert titles(r) == ["Undated", "New", "Old"]
+    assert titles(r) == ["Old", "New", "Undated"]  # CANARY: deliberately wrong
     item = r.json()["items"][0]
     assert "raw_payload" not in item and "embedding" not in item and "description" not in item
     assert r.json()["total"] == 3
