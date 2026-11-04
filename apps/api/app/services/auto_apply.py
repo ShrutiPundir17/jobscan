@@ -288,6 +288,11 @@ def approve(db: Session, app: Application) -> Application:
     plan = app.auto_apply_plan if isinstance(app.auto_apply_plan, dict) else None
     if effective_state(app) != AWAITING_APPROVAL or not plan or not plan.get("ready") or not plan.get("applicant"):
         raise _conflict("Nothing is waiting for approval. Prepare auto-apply first.")
+    resume_id = plan.get("resume_id")
+    if not resume_id or db.scalar(
+        select(Resume.id).where(Resume.id == UUID(resume_id), Resume.user_id == app.user_id)
+    ) is None:
+        raise _conflict("The resume in this plan was deleted. Prepare again.")
     prepared_at = _parse_dt(plan.get("prepared_at"))
     if prepared_at is None or _now() - prepared_at > PLAN_MAX_AGE:
         raise _conflict("This plan is more than a week old. Prepare again so we check the form is still open.")

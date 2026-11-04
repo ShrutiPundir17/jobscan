@@ -1932,6 +1932,18 @@ p {
   background: var(--accent-soft);
 }
 
+.resume-row-main {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
 /* ??? Kanban ??? */
 .kanban {
   display: grid;

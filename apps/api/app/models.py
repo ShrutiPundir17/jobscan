@@ -7,6 +7,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -125,6 +126,15 @@ class PasswordResetToken(Base):
 
 class Resume(Base, TimestampMixin):
     __tablename__ = "resumes"
+    __table_args__ = (
+        # Matching and auto-apply read "the" primary resume; the DB guarantees there is at most one.
+        Index(
+            "uq_resumes_one_primary_per_user",
+            "user_id",
+            unique=True,
+            postgresql_where=text("is_primary"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

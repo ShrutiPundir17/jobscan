@@ -9,7 +9,6 @@ class ResumeResponse(BaseModel):
 
     id: UUID
     filename: str | None
-    storage_path: str | None
     raw_text: str | None
     parsed_data: dict | None = None
     is_primary: bool
@@ -27,6 +26,18 @@ class ResumeResponse(BaseModel):
 class ResumeListResponse(BaseModel):
     items: list[ResumeResponse]
     total: int = Field(ge=0)
+
+
+class ResumeDeleteResponse(BaseModel):
+    id: UUID
+    new_primary_id: UUID | None = Field(
+        default=None,
+        description="Set when the deleted resume was primary and another one took over.",
+    )
+    retired_auto_apply_plans: int = Field(
+        default=0,
+        description="Auto-apply plans that used this resume and must be prepared again.",
+    )
 
 
 class EmbeddingStatusResponse(BaseModel):
