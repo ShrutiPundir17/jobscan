@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
+import { autoApplyBadge, isAutoApplyBusy } from "./autoApply";
+import { AutoApplyPanel } from "./components/AutoApplyPanel";
 import type { ApplicationItem } from "./types";
 
 type Props = {
@@ -42,6 +45,55 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
   useEffect(() => {
     void load();
   }, []);
+
+  function replaceItem(updated: ApplicationItem) {
+    setItems((prev) => prev.map((x) => (x.id === updated.id ? updated : x)));
+    setSelected((cur) => (cur?.id === updated.id ? updated : cur));
+  }
+
+  // Follow the agent while it fills / submits the open application.
+  const selectedWorking = selected ? isAutoApplyBusy(selected.auto_apply_state) : false;
+  useEffect(() => {
+    if (!selected || !selectedWorking) return;
+    const id = selected.id;
+    const timer = window.setInterval(() => {
+      api
+        .getApplication(id)
+        .then(replaceItem)
+        .catch(() => {
+          /* next tick retries */
+        });
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [selected?.id, selectedWorking]);
+
+  async function runAutoApply(
+    id: string,
+    action: "prepare" | "approve" | "cancel",
+  ) {
+    setBusyId(id);
+    onError(null);
+    try {
+      const updated =
+        action === "prepare"
+          ? await api.prepareAutoApply(id)
+          : action === "approve"
+            ? await api.approveAutoApply(id)
+            : await api.cancelAutoApply(id);
+      replaceItem(updated);
+      onMessage(
+        action === "prepare"
+          ? "Agent is filling the form — you'll review it before anything is sent."
+          : action === "approve"
+            ? "Approved — submitting now."
+            : "Auto-apply plan discarded.",
+      );
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Auto-apply request failed");
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   const byCol = useMemo(() => {
     const map: Record<string, ApplicationItem[]> = {};
@@ -90,6 +142,7 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
 
   function methodLabel(a: ApplicationItem): string {
     if (["pending_review", "matched", "discovered"].includes(a.status)) return "Match";
+    if (a.auto_apply_state === "submitted") return "Auto-applied";
     if (a.applied_at) return "One-tap";
     return "Manual";
   }
@@ -149,6 +202,11 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                       : new Date(a.created_at).toLocaleDateString()}
                   </div>
                   <span className="method-pill">{methodLabel(a)}</span>
+                  {a.auto_apply_state && a.auto_apply_state !== "submitted" ? (
+                    <span className={`aa-pill ${autoApplyBadge(a.auto_apply_state)?.tone ?? ""}`}>
+                      {autoApplyBadge(a.auto_apply_state)?.label}
+                    </span>
+                  ) : null}
                 </button>
               ))}
             </div>
@@ -156,7 +214,8 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
         </div>
       )}
 
-      {selected ? (
+      {/* Portal: the page's .fade-in transform would otherwise trap the fixed drawer. */}
+      {selected ? createPortal(
         <>
           <div className="drawer-scrim" onClick={() => setSelected(null)} />
           <aside className="drawer" aria-label="Application detail">
@@ -173,6 +232,13 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                   Score {selected.match_score ?? "—"} · {selected.status}
                 </div>
               </div>
+              <AutoApplyPanel
+                item={selected}
+                busy={busyId === selected.id}
+                onPrepare={() => void runAutoApply(selected.id, "prepare")}
+                onApprove={() => void runAutoApply(selected.id, "approve")}
+                onCancel={() => void runAutoApply(selected.id, "cancel")}
+              />
               <div className="block-label">Move to</div>
               <div className="chip-row">
                 {COLUMNS.map((c) => (
@@ -215,7 +281,8 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
               </a>
             </div>
           </aside>
-        </>
+        </>,
+        document.body,
       ) : null}
     </div>
   );

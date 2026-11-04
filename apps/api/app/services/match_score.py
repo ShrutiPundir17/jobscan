@@ -323,6 +323,12 @@ def deep_score_matches(
                 user.id,
                 len(persisted_ids),
             )
+        try:
+            from app.services.auto_apply import queue_auto_prepare
+
+            queue_auto_prepare(db, user, persisted_ids)
+        except Exception:  # noqa: BLE001 — never fail matching over auto-apply
+            logger.exception("failed to queue auto-apply user=%s", user.id)
 
     logger.info(
         "deep_score user=%s resume=%s scored=%s persisted=%s threshold=%s",

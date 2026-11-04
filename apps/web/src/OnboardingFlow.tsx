@@ -273,7 +273,8 @@ export function OnboardingFlow({ onDone }: Props) {
             </div>
             <div className="toggle-row">
               <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-                Automatically apply to matches above your score threshold.
+                Auto-prepare applications for matches above your score threshold — you approve
+                each one before it's sent.
               </span>
               <button
                 type="button"

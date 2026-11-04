@@ -16,7 +16,7 @@ JOBSCAN/
 ├── workers/
 │   ├── job-scanner/      # Periodic job portal scanning (logic later)
 │   ├── matcher/          # Fit scoring / resume rewrite (logic later)
-│   └── apply-agent/      # Auto-apply (logic later)
+│   └── apply-agent/      # Auto-apply: fills Greenhouse/Lever/Ashby forms (user approves)
 ├── docs/
 ├── scripts/
 ├── docker-compose.yml    # Postgres, Redis, backend, Celery

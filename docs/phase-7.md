@@ -15,7 +15,7 @@
 
 ### Lightweight apply (not auto-apply)
 `POST /applications/{id}/apply` sets status + `applied_at` and returns `job_url`.  
-The user finishes the employer form with the tailored resume. **Browser auto-apply agent is not built.**
+The user finishes the employer form with the tailored resume. For Greenhouse / Lever / Ashby forms, see the auto-apply agent in [phase-8.md](./phase-8.md).
 
 ---
 
@@ -37,7 +37,7 @@ For production:
 Email alerts already work with SMTP once configured.
 
 ### Auto-apply
-Not implemented. Preferences may show an auto-apply toggle; it does not submit applications for you. Next step would be a guarded agent (site-specific adapters, rate limits, human confirm).
+Shipped in [Phase 8](./phase-8.md): fills public ATS forms, every submission needs the user's approval.
 
 ---
 

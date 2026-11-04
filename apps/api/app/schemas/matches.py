@@ -112,6 +112,9 @@ class PersistedMatchResponse(BaseModel):
     tailored_bullets: dict | None = None
     tailored_resume_text: str | None = None
     resume_id: UUID | None = None
+    auto_apply_state: str | None = None
+    auto_apply_provider: str | None = None
+    auto_apply_error: str | None = None
     job: MatchJobSummary
     created_at: datetime
     updated_at: datetime

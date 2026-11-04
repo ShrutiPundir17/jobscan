@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -15,7 +16,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, deferred, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
 
 from app.db import Base
@@ -79,6 +80,7 @@ class User(Base, TimestampMixin):
     notify_whatsapp_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, nullable=False
     )
+    linkedin_url: Mapped[str | None] = mapped_column(String(512))
 
     resumes: Mapped[list["Resume"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     applications: Mapped[list["Application"]] = relationship(
@@ -137,6 +139,8 @@ class Resume(Base, TimestampMixin):
     )
     filename: Mapped[str | None] = mapped_column(String(512))
     storage_path: Mapped[str | None] = mapped_column(String(1024))
+    # Original upload bytes; deferred so list/get endpoints don't load them.
+    file_data: Mapped[bytes | None] = deferred(mapped_column(LargeBinary))
     raw_text: Mapped[str | None] = mapped_column(Text)
     # skills, experience, projects, seniority, etc.
     parsed_data: Mapped[dict | None] = mapped_column(JSONB)
@@ -231,6 +235,13 @@ class Application(Base, TimestampMixin):
     tailored_resume_text: Mapped[str | None] = mapped_column(Text)
     applied_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     notes: Mapped[str | None] = mapped_column(Text)
+    # Auto-apply agent (see app/services/auto_apply.py for the state machine)
+    auto_apply_state: Mapped[str | None] = mapped_column(String(32), index=True)
+    auto_apply_provider: Mapped[str | None] = mapped_column(String(32))
+    auto_apply_url: Mapped[str | None] = mapped_column(String(2048))
+    auto_apply_plan: Mapped[dict | None] = mapped_column(JSONB)
+    auto_apply_error: Mapped[str | None] = mapped_column(Text)
+    auto_apply_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="applications")
     job: Mapped["Job"] = relationship(back_populates="applications")

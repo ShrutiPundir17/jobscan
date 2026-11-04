@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { autoApplyBadge, canPrepare, isAutoApplyBusy } from "../autoApply";
 import type { PersistedMatch } from "../types";
 import { ScoreGauge } from "./ScoreGauge";
 
@@ -6,6 +7,8 @@ type Props = {
   match: PersistedMatch;
   busy?: boolean;
   onApply: () => void;
+  /** Start the auto-apply agent (fills the ATS form; user approves later). */
+  onAutoApply?: () => void;
   /** Return true when tailor succeeded so the card can open Details. */
   onTailor: () => void | Promise<boolean | void>;
   onDismiss?: () => void;
@@ -44,6 +47,7 @@ export function MatchCard({
   match,
   busy,
   onApply,
+  onAutoApply,
   onTailor,
   onDismiss,
   onUndo,
@@ -59,6 +63,8 @@ export function MatchCard({
   const scoreBand =
     score >= 80 ? "score-high" : score >= 60 ? "score-mid" : "score-low";
   const jd = (match.job.description || "").trim();
+  const aaBadge = autoApplyBadge(match.auto_apply_state);
+  const aaBusy = isAutoApplyBusy(match.auto_apply_state);
 
   async function handleTailor() {
     const ok = await onTailor();
@@ -112,6 +118,14 @@ export function MatchCard({
           </div>
           <div className="match-sub" style={{ marginTop: 2 }}>
             via {match.job.source}
+            {aaBadge ? (
+              <span
+                className={`aa-pill ${aaBadge.tone}`}
+                title={match.auto_apply_error ?? undefined}
+              >
+                {aaBadge.label}
+              </span>
+            ) : null}
           </div>
         </div>
       </div>
@@ -156,6 +170,17 @@ export function MatchCard({
         <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={onApply}>
           Apply Now
         </button>
+        {onAutoApply && (canPrepare(match.auto_apply_state) || aaBusy) ? (
+          <button
+            type="button"
+            className="btn btn-secondary btn-sm"
+            disabled={busy || aaBusy}
+            title="Fill the employer's application form for you to review before sending"
+            onClick={onAutoApply}
+          >
+            {aaBusy ? "Working…" : match.auto_apply_state ? "Retry auto-apply" : "Auto-apply"}
+          </button>
+        ) : null}
         <a className="btn btn-secondary btn-sm" href={match.job.url} target="_blank" rel="noreferrer">
           View Full JD
         </a>
@@ -176,6 +201,16 @@ export function MatchCard({
           {details ? "Hide" : "Details"}
         </button>
       </div>
+
+      {match.auto_apply_state === "awaiting_approval" ? (
+        <p className="muted" style={{ fontSize: "0.78rem", marginTop: 8 }}>
+          Form filled and waiting for you — open <strong>Applications</strong> to review and send.
+        </p>
+      ) : match.auto_apply_error && !aaBusy ? (
+        <p className="aa-error" style={{ marginTop: 8 }}>
+          {match.auto_apply_error}
+        </p>
+      ) : null}
 
       {details ? (
         <div className="match-details fade-in">

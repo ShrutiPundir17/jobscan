@@ -71,12 +71,13 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
-      PYTHONPATH: /job-scanner:/app
+      PYTHONPATH: /job-scanner:/apply-agent:/app
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - ./apps/api:/app
       - ./workers/job-scanner:/job-scanner
+      - ./workers/apply-agent:/apply-agent
     depends_on:
       postgres:
         condition: service_healthy
@@ -123,10 +124,11 @@ services:
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN:-}
       TWILIO_WHATSAPP_FROM: ${TWILIO_WHATSAPP_FROM:-}
       APP_PUBLIC_URL: ${APP_PUBLIC_URL:-http://localhost:5173}
-      PYTHONPATH: /job-scanner:/app
+      PYTHONPATH: /job-scanner:/apply-agent:/app
     volumes:
       - ./apps/api:/app
       - ./workers/job-scanner:/job-scanner
+      - ./workers/apply-agent:/apply-agent
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,10 +152,11 @@ services:
       REDIS_URL: redis://redis:6379/0
       CELERY_BROKER_URL: redis://redis:6379/0
       CELERY_RESULT_BACKEND: redis://redis:6379/1
-      PYTHONPATH: /job-scanner:/app
+      PYTHONPATH: /job-scanner:/apply-agent:/app
     volumes:
       - ./apps/api:/app
       - ./workers/job-scanner:/job-scanner
+      - ./workers/apply-agent:/apply-agent
     depends_on:
       redis:
         condition: service_healthy

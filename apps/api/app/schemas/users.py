@@ -1,4 +1,5 @@
 from datetime import datetime
+from urllib.parse import urlparse
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
@@ -17,6 +18,28 @@ class UserPreferencesUpdate(BaseModel):
     )
     notify_email_enabled: bool | None = None
     notify_whatsapp_enabled: bool | None = None
+    linkedin_url: str | None = Field(
+        default=None,
+        max_length=512,
+        description="Public LinkedIn profile URL, used when auto-apply fills forms.",
+    )
+
+    @field_validator("linkedin_url", mode="before")
+    @classmethod
+    def normalize_linkedin_url(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("linkedin_url must be a string")
+        text = value.strip()
+        if not text:
+            return None
+        if not text.lower().startswith(("http://", "https://")):
+            text = "https://" + text
+        host = (urlparse(text).hostname or "").lower()
+        if host != "linkedin.com" and not host.endswith(".linkedin.com"):
+            raise ValueError("Enter a linkedin.com profile URL")
+        return text
 
     @field_validator("target_roles", "preferred_locations", mode="before")
     @classmethod
@@ -68,4 +91,5 @@ class UserPreferencesResponse(BaseModel):
     phone: str | None = None
     notify_email_enabled: bool = True
     notify_whatsapp_enabled: bool = False
+    linkedin_url: str | None = None
     created_at: datetime

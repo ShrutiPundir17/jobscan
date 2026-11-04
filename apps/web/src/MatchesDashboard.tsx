@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "./api";
+import { isAutoApplyBusy } from "./autoApply";
 import { MatchCard, MatchCardLoading } from "./components/MatchCard";
 import type { PersistedMatch } from "./types";
 
@@ -35,6 +36,21 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
   useEffect(() => {
     void load();
   }, []);
+
+  // While the agent is filling/submitting a form, refresh quietly until it settles.
+  const agentWorking = items.some((m) => isAutoApplyBusy(m.auto_apply_state));
+  useEffect(() => {
+    if (!agentWorking) return;
+    const timer = window.setInterval(() => {
+      api
+        .listMatches()
+        .then((res) => setItems(res.items))
+        .catch(() => {
+          /* keep last state; next tick retries */
+        });
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, [agentWorking]);
 
   const filtered = useMemo(() => {
     return items.filter((m) => {
@@ -115,6 +131,28 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
       onError(err instanceof Error ? err.message : "Tailor failed");
       onMessage(null);
       return false;
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function autoApply(id: string) {
+    setBusyId(id);
+    onError(null);
+    try {
+      const res = await api.prepareAutoApply(id);
+      setItems((prev) =>
+        prev.map((m) =>
+          m.id === id
+            ? { ...m, auto_apply_state: res.auto_apply_state, auto_apply_error: res.auto_apply_error }
+            : m,
+        ),
+      );
+      onMessage(
+        "Auto-apply started — the agent is filling the form. Nothing is sent until you approve it in Applications.",
+      );
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Auto-apply failed to start");
     } finally {
       setBusyId(null);
     }
@@ -224,6 +262,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
                 })
               }
               onApply={() => void apply(m.id, m.job.url)}
+              onAutoApply={() => void autoApply(m.id)}
               onTailor={() => tailor(m.id)}
             />
           ))}
