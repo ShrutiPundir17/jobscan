@@ -38,6 +38,15 @@ class Settings(BaseSettings):
     scanner_headless: bool = True
     # Empty = bundled Chromium; set to "chrome" on a desktop host with Google Chrome
     scanner_browser_channel: str = ""
+    # Resilience: retries for transient failures (never for blocks), per-run caps
+    # so a scan finishes inside the Celery time limit, manual-trigger cooldown.
+    scanner_retries: int = 2
+    scanner_retry_base_seconds: float = 3.0
+    scanner_max_keywords: int = 3
+    scanner_max_locations: int = 3
+    scanner_manual_cooldown_seconds: int = 600
+    # Optional outbound proxy for scrapers, e.g. http://user:pass@host:8080 (never logged).
+    scanner_proxy_url: str = ""
 
     # Phase 4 Stage 1 — vector matching
     match_vector_limit: int = 50

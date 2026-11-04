@@ -19,7 +19,7 @@ Crawls job portals on a schedule, saves new listings, and handles anti-bot syste
 | 4 | Persist scraped jobs + dedupe | **Done** (external_id + url fingerprint) |
 | 5 | Celery schedule every 2 hours + `/scanner/trigger` | **Done** |
 | 6 | Portal expansion: Internshala, Foundit, Unstop | **Done** |
-| 7 | Proxies, retries, captcha / block handling | Pending |
+| 7 | Proxies, retries, captcha / block handling | **Done** (see below) |
 
 ## Step 1 — Base scraper
 
@@ -85,3 +85,26 @@ docker compose up -d --build celery-worker celery-beat backend
 # Fire one scan now
 docker compose exec celery-worker celery -A app.celery_app.celery call app.tasks.job_scanner.scan_jobs
 ```
+
+## Step 7 — Resilience
+
+Implemented in `apps/api/app/tasks/job_scanner.py` + `app/services/scan_guard.py` (Redis).
+
+| Problem | Behaviour |
+|---------|-----------|
+| Timeouts / flaky pages | Retried `SCANNER_RETRIES` times with exponential backoff + jitter |
+| 401/403/429, captcha or challenge wall (`ScraperBlockedError`) | **Never retried.** The rest of that portal is skipped for the run and it cools down 1h → 2h → 4h … max 24h; any success resets it |
+| Repeated plain failures | After 3 failed runs in a row the portal cools down for 30 min |
+| Run exceeding the Celery time limit | Jobs are saved after **each portal**, and no new search starts within 150 s of the soft limit — partial work is never lost |
+| Unbounded combinations | At most `SCANNER_MAX_KEYWORDS` × `SCANNER_MAX_LOCATIONS` searches per portal |
+| Overlapping scans | Redis token lock — a second scan (beat or manual) skips |
+| Scan-button spam | Already queued → `already_queued`; otherwise one manual scan per user per `SCANNER_MANUAL_COOLDOWN_SECONDS` (429 + `Retry-After`) |
+| Worker killed mid-scan | Status older than the hard limit reads as `stalled`; the lock expires on its own |
+| Proxy | Optional `SCANNER_PROXY_URL` (http/https/socks5); malformed → scan fails instead of running unproxied; credentials stripped from logs and errors |
+
+Captchas are treated as a "no" from the site — the scanner backs off; it does
+not try to solve or evade them.
+
+`GET /scanner/status` now returns per-portal health (`ok`, `cooling_down`,
+`failing`, `unknown`), shown in the dashboard Agent Status panel.
+

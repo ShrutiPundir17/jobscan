@@ -45,12 +45,15 @@ class BaseScraper(ABC):
         delay_profile: DelayProfile | None = None,
         navigation_timeout_ms: int = 45_000,
         browser_channel: str | None = None,
+        proxy: dict[str, str] | None = None,
     ) -> None:
         self.headless = headless
         self.delays = delay_profile or DelayProfile()
         self.navigation_timeout_ms = navigation_timeout_ms
         # "chrome" / "msedge" use an installed browser (harder for Akamai to fingerprint)
         self.browser_channel = browser_channel
+        # Playwright proxy dict ({"server", "username", "password"}); never logged.
+        self.proxy = proxy
         self._playwright: Any = None
         self._browser: Any = None
         self._context: Any = None
@@ -80,11 +83,12 @@ class BaseScraper(ABC):
         self._page = await self._context.new_page()
         self._page.set_default_timeout(self.navigation_timeout_ms)
         logger.info(
-            "scraper_started name=%s source=%s headless=%s channel=%s",
+            "scraper_started name=%s source=%s headless=%s channel=%s proxy=%s",
             self.name,
             self.source,
             self.headless,
             self.browser_channel or "chromium",
+            self.proxy["server"] if self.proxy else "none",
         )
 
     async def _launch_browser(self):
@@ -99,9 +103,10 @@ class BaseScraper(ABC):
         last_error: Exception | None = None
         for channel in channels:
             try:
-                browser = await self._playwright.chromium.launch(
-                    **browser_launch_args(headless=self.headless, channel=channel)
-                )
+                launch_args = browser_launch_args(headless=self.headless, channel=channel)
+                if self.proxy:
+                    launch_args["proxy"] = self.proxy
+                browser = await self._playwright.chromium.launch(**launch_args)
                 self.browser_channel = channel
                 return browser
             except Exception as exc:  # noqa: BLE001

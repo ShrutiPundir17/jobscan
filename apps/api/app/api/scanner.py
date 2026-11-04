@@ -1,6 +1,6 @@
 from datetime import UTC, datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -9,19 +9,33 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.db import get_db
 from app.models import Application, Job, User
+from app.services import scan_guard
 from app.services.scan_status import read_scan_telemetry, record_scan_event
 from app.tasks.job_embeddings import embed_pending_jobs
-from app.tasks.job_scanner import scan_jobs
+from app.tasks.job_scanner import HARD_TIME_LIMIT, _parse_csv, scan_jobs
 
 router = APIRouter(prefix="/scanner", tags=["scanner"])
 
 IST = timezone(timedelta(hours=5, minutes=30))
+# A "running"/"queued" status older than this means the worker died mid-scan.
+RUNNING_STALE_AFTER = timedelta(seconds=HARD_TIME_LIMIT + 120)
+QUEUED_STALE_AFTER = scan_guard.QUEUED_TTL
 
 
 class TriggerResponse(BaseModel):
     status: str
     task_id: str
     message: str
+
+
+class PortalHealth(BaseModel):
+    name: str
+    state: str = Field(description="ok | cooling_down | failing | unknown")
+    cooldown_until: datetime | None = None
+    last_ok_at: datetime | None = None
+    last_scraped: int | None = None
+    last_error: str | None = None
+    last_error_kind: str | None = None
 
 
 class AgentStatusResponse(BaseModel):
@@ -33,6 +47,7 @@ class AgentStatusResponse(BaseModel):
     high_match_threshold: int = 85
     server_time: datetime
     last_scan_status: str | None = None
+    portals: list[PortalHealth] = Field(default_factory=list)
 
 
 @router.get("/status", response_model=AgentStatusResponse)
@@ -91,11 +106,18 @@ def agent_status(
         or 0
     )
 
+    # A worker killed mid-scan never writes its final status.
+    if last_scan_at is not None and last_scan_status in {"running", "queued"}:
+        age = now_utc - (last_scan_at if last_scan_at.tzinfo else last_scan_at.replace(tzinfo=UTC))
+        limit = RUNNING_STALE_AFTER if last_scan_status == "running" else QUEUED_STALE_AFTER
+        if age > limit:
+            last_scan_status = "stalled"
+
     if not settings.scanner_enabled:
         state = "paused"
-    elif last_scan_status == "running":
+    elif last_scan_status in {"running", "queued"}:
         state = "active"
-    elif last_scan_status in {"partial", "failed"}:
+    elif last_scan_status in {"partial", "failed", "blocked", "stalled"}:
         state = "degraded"
     else:
         state = "active"
@@ -109,6 +131,7 @@ def agent_status(
         high_match_threshold=85,
         server_time=now_utc,
         last_scan_status=last_scan_status,
+        portals=[PortalHealth(**p) for p in scan_guard.portal_health(_parse_csv(settings.scanner_portals))],
     )
 
 
@@ -119,22 +142,50 @@ def trigger_scan(current_user: User = Depends(get_current_user)) -> TriggerRespo
 
     Uses the current user's target roles + preferred locations when set,
     so Scan jobs is not stuck on the global SCANNER_LOCATIONS default (bangalore).
+    Only one scan runs at a time and each user can trigger one per cooldown.
     """
+    if not settings.scanner_enabled:
+        return TriggerResponse(status="disabled", task_id="", message="Job scanning is paused on this server.")
+    if scan_guard.scan_in_progress():
+        return TriggerResponse(
+            status="already_queued",
+            task_id="",
+            message="A scan is already running — new jobs will appear in a few minutes.",
+        )
+    cooldown = timedelta(seconds=settings.scanner_manual_cooldown_seconds)
+    wait = scan_guard.manual_trigger_wait(current_user.id, cooldown)
+    if wait:
+        minutes = max(1, round(wait / 60))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"You scanned recently. Try again in about {minutes} min.",
+            headers={"Retry-After": str(wait)},
+        )
+
     roles = [
         str(r).strip()
         for r in (current_user.target_roles or [])
         if str(r).strip()
-    ]
+    ][: max(1, settings.scanner_max_keywords)]
     locs = [
         str(loc).strip()
         for loc in (current_user.preferred_locations or [])
         if str(loc).strip()
-    ]
+    ][: max(1, settings.scanner_max_locations)]
+    scan_guard.mark_queued()
+    try:
+        async_result = scan_jobs.delay(
+            keywords=roles or None,
+            locations=locs or None,
+        )
+    except Exception as exc:  # noqa: BLE001 — broker down
+        scan_guard.clear_queued()
+        scan_guard.release_manual_trigger(current_user.id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Could not reach the scanner worker. Try again shortly.",
+        ) from exc
     record_scan_event(status="queued", scraped=0, bump_daily=False)
-    async_result = scan_jobs.delay(
-        keywords=roles or None,
-        locations=locs or None,
-    )
     where = ", ".join(locs) if locs else "default scanner locations"
     what = ", ".join(roles[:3]) if roles else "default scanner keywords"
     return TriggerResponse(

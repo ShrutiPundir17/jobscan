@@ -347,6 +347,7 @@ export const api = {
       high_match_threshold: number;
       server_time: string;
       last_scan_status?: string | null;
+      portals?: import("./types").PortalHealth[];
     }>("/scanner/status");
   },
   triggerEmbedJobs() {

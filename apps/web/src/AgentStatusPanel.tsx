@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import type { PortalHealth } from "./types";
 
 type AgentStatus = {
   state: string;
@@ -10,7 +11,16 @@ type AgentStatus = {
   high_match_threshold: number;
   server_time: string;
   last_scan_status?: string | null;
+  portals?: PortalHealth[];
 };
+
+function portalNote(p: PortalHealth): string {
+  if (p.state === "cooling_down" && p.cooldown_until) {
+    const t = new Date(p.cooldown_until).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return `${p.last_error_kind === "blocked" ? "blocked us" : "failing"} · paused until ${t}`;
+  }
+  return "last attempt failed";
+}
 
 function formatLocalClock(date: Date): string {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -27,6 +37,7 @@ function formatLocalClock(date: Date): string {
 
 function formatLastScan(iso: string | null, nowMs: number, status?: string | null): string {
   if (status === "running" || status === "queued") return "in progress";
+  if (status === "stalled") return "stalled — will retry";
   if (!iso) return "never";
   const then = new Date(iso).getTime();
   if (Number.isNaN(then)) return "unknown";
@@ -100,6 +111,17 @@ export function AgentStatusPanel() {
         ? formatLastScan(status.last_scan_at, now.getTime(), status.last_scan_status)
         : "…",
     },
+    ...(status?.portals?.length
+      ? [
+          {
+            label: "Portals",
+            value: `${status.portals.filter((p) => p.state === "ok" || p.state === "unknown").length}/${status.portals.length} healthy`,
+            tone: (status.portals.some((p) => p.state === "cooling_down" || p.state === "failing")
+              ? "warn"
+              : "ok") as "ok" | "warn",
+          },
+        ]
+      : []),
     {
       label: "Scanned today",
       value: status ? formatCount(status.jobs_scanned_today) : "…",
@@ -137,6 +159,17 @@ export function AgentStatusPanel() {
           </div>
         ))}
       </dl>
+      {status?.portals?.some((p) => p.state === "cooling_down" || p.state === "failing") ? (
+        <ul className="agent-status-portals">
+          {status.portals
+            .filter((p) => p.state === "cooling_down" || p.state === "failing")
+            .map((p) => (
+              <li key={p.name} title={p.last_error ?? undefined}>
+                <span>{p.name}</span> {portalNote(p)}
+              </li>
+            ))}
+        </ul>
+      ) : null}
       {error ? <p className="agent-status-err">{error}</p> : null}
     </aside>
   );
