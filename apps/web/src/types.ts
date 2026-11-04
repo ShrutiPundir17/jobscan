@@ -9,6 +9,7 @@ export type UserProfile = {
   phone: string | null;
   notify_email_enabled: boolean;
   notify_whatsapp_enabled: boolean;
+  linkedin_url: string | null;
   created_at: string;
 };
 
@@ -109,9 +110,45 @@ export type PersistedMatch = {
   } | null;
   tailored_resume_text: string | null;
   resume_id: string | null;
+  auto_apply_state: AutoApplyState | null;
+  auto_apply_provider: string | null;
+  auto_apply_error: string | null;
   job: MatchJob;
   created_at: string;
   updated_at: string;
+};
+
+export type AutoApplyState =
+  | "queued"
+  | "preparing"
+  | "awaiting_approval"
+  | "needs_manual"
+  | "unsupported"
+  | "submitting"
+  | "sending"
+  | "submitted"
+  | "unconfirmed"
+  | "failed"
+  | "dismissed";
+
+export type AutoApplyPlan = {
+  provider: string;
+  url: string;
+  form_title?: string;
+  job_title?: string;
+  title_match?: boolean;
+  notes?: string[];
+  filled: Array<{ key: string; label: string; value: string }>;
+  unanswered_required: string[];
+  captcha: boolean;
+  resume_attached: boolean;
+  ready: boolean;
+  resume_source?: "original_file" | "text_fallback" | "missing";
+  cover_letter?: string | null;
+  prepared_at?: string;
+  approved_at?: string;
+  submitted_at?: string;
+  confirmation?: string | null;
 };
 
 export type ApplicationItem = {
@@ -126,6 +163,11 @@ export type ApplicationItem = {
   notes: string | null;
   applied_at: string | null;
   resume_id: string | null;
+  auto_apply_state: AutoApplyState | null;
+  auto_apply_provider: string | null;
+  auto_apply_url: string | null;
+  auto_apply_plan: AutoApplyPlan | null;
+  auto_apply_error: string | null;
   job: MatchJob;
   created_at: string;
   updated_at: string;

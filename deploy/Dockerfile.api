@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/job-scanner:/app
+    PYTHONPATH=/job-scanner:/apply-agent:/app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
@@ -34,6 +34,7 @@ RUN pip install --no-cache-dir -r requirements.txt \
 
 COPY apps/api /app
 COPY workers/job-scanner /job-scanner
+COPY workers/apply-agent/apply_agent /apply-agent/apply_agent
 COPY deploy/api_entrypoint.sh /api_entrypoint.sh
 COPY deploy/start_api.sh /start_api.sh
 RUN sed -i 's/\r$//' /api_entrypoint.sh /start_api.sh /app/scripts/celery_worker.sh \

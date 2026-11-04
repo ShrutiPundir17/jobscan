@@ -63,6 +63,15 @@ class Settings(BaseSettings):
 
     app_public_url: str = "http://localhost:5173"
 
+    # Auto-apply agent — fills public ATS forms (Greenhouse/Lever/Ashby);
+    # every submission waits for the user's explicit approval.
+    auto_apply_enabled: bool = True  # platform kill switch
+    auto_apply_daily_limit: int = 10  # submissions per user per rolling 24h
+    auto_apply_headless: bool = True
+    auto_apply_browser_channel: str = ""
+    # Fetch the job page (e.g. LinkedIn guest view) to find an external ATS link.
+    auto_apply_resolve_via_fetch: bool = True
+
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 

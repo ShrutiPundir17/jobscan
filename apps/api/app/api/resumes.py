@@ -67,6 +67,7 @@ async def upload_resume(
         user_id=current_user.id,
         filename=file.filename,
         storage_path=str(storage_path),
+        file_data=data,
         raw_text=raw_text or None,
         parsed_data=None,
         is_primary=existing_count == 0,

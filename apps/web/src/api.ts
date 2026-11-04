@@ -133,6 +133,7 @@ export const api = {
     phone?: string | null;
     notify_email_enabled?: boolean;
     notify_whatsapp_enabled?: boolean;
+    linkedin_url?: string | null;
   }) {
     return request<import("./types").UserProfile>("/users/me", {
       method: "PATCH",
@@ -263,6 +264,33 @@ export const api = {
     return request<import("./types").ApplicationItem>(
       `/applications/${applicationId}`,
       { method: "PATCH", body: JSON.stringify(payload) },
+    );
+  },
+  getApplication(applicationId: string) {
+    return request<import("./types").ApplicationItem>(`/applications/${applicationId}`);
+  },
+  prepareAutoApply(applicationId: string) {
+    return request<import("./types").ApplicationItem>(
+      `/applications/${applicationId}/auto-apply/prepare`,
+      { method: "POST" },
+    );
+  },
+  approveAutoApply(applicationId: string) {
+    return request<import("./types").ApplicationItem>(
+      `/applications/${applicationId}/auto-apply/approve`,
+      { method: "POST" },
+    );
+  },
+  cancelAutoApply(applicationId: string) {
+    return request<import("./types").ApplicationItem>(
+      `/applications/${applicationId}/auto-apply/cancel`,
+      { method: "POST" },
+    );
+  },
+  resolveAutoApply(applicationId: string, received: boolean) {
+    return request<import("./types").ApplicationItem>(
+      `/applications/${applicationId}/auto-apply/resolve`,
+      { method: "POST", body: JSON.stringify({ received }) },
     );
   },
   withdrawApplication(applicationId: string) {

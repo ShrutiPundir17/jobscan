@@ -4,7 +4,7 @@ WORKDIR /app
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/job-scanner:/app
+    PYTHONPATH=/job-scanner:/apply-agent:/app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \

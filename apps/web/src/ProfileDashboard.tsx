@@ -365,7 +365,7 @@ export function ProfileDashboard({ onLogout, hideChrome = false }: Props) {
               checked={autoApply}
               onChange={(e) => setAutoApply(e.target.checked)}
             />
-            Auto-apply when match score is high enough
+            Auto-prepare applications for strong matches (you approve each one)
           </label>
 
           <label className="field">

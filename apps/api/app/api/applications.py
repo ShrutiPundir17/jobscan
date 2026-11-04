@@ -12,6 +12,7 @@ from app.api.deps import get_current_user
 from app.db import get_db
 from app.models import Application, ApplicationStatus, User
 from app.schemas.matches import MatchJobSummary
+from app.services import auto_apply
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -35,9 +36,18 @@ class ApplicationResponse(BaseModel):
     notes: str | None = None
     applied_at: datetime | None = None
     resume_id: UUID | None = None
+    auto_apply_state: str | None = None
+    auto_apply_provider: str | None = None
+    auto_apply_url: str | None = None
+    auto_apply_plan: dict | None = None
+    auto_apply_error: str | None = None
     job: MatchJobSummary
     created_at: datetime
     updated_at: datetime
+
+
+class ResolveUnconfirmedRequest(BaseModel):
+    received: bool = Field(description="True if the employer did receive the application.")
 
 
 class ApplicationListResponse(BaseModel):
@@ -62,6 +72,13 @@ def _gaps(app: Application) -> list[str]:
     return []
 
 
+def _public_plan(plan: object) -> dict | None:
+    # The applicant snapshot duplicates fields already shown in `filled`.
+    if not isinstance(plan, dict):
+        return None
+    return {k: v for k, v in plan.items() if k != "applicant"}
+
+
 def _to_response(app: Application) -> ApplicationResponse:
     return ApplicationResponse(
         id=app.id,
@@ -75,6 +92,11 @@ def _to_response(app: Application) -> ApplicationResponse:
         notes=app.notes,
         applied_at=app.applied_at,
         resume_id=app.resume_id,
+        auto_apply_state=auto_apply.effective_state(app),
+        auto_apply_provider=app.auto_apply_provider,
+        auto_apply_url=app.auto_apply_url,
+        auto_apply_plan=_public_plan(app.auto_apply_plan),
+        auto_apply_error=auto_apply.effective_error(app),
         job=MatchJobSummary.model_validate(app.job),
         created_at=app.created_at,
         updated_at=app.updated_at,
@@ -145,8 +167,8 @@ def apply_to_job(
     """
     Mark application as applied and return the job URL.
 
-    Full browser auto-apply agent is not enabled yet — user completes the
-    form on the employer site using the tailored resume.
+    The user completes the form on the employer site; for ATS-hosted forms
+    see the /auto-apply endpoints instead.
     """
     app = _get_owned_app(db, current_user, application_id)
     if app.status in {ApplicationStatus.withdrawn, ApplicationStatus.rejected}:
@@ -154,6 +176,7 @@ def apply_to_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot apply from status '{app.status.value}'.",
         )
+    auto_apply.guard_manual_change(db, app)
     now = datetime.now(UTC)
     app.status = ApplicationStatus.applied
     app.applied_at = now
@@ -181,6 +204,8 @@ def update_application(
     data = payload.model_dump(exclude_unset=True)
     if "status" in data and data["status"] is not None:
         new_status = data["status"]
+        if new_status != app.status:
+            auto_apply.guard_manual_change(db, app)
         app.status = new_status
         if new_status == ApplicationStatus.applied and app.applied_at is None:
             app.applied_at = datetime.now(UTC)
@@ -204,8 +229,69 @@ def withdraw_application(
 ) -> ApplicationResponse:
     """Mark an application as withdrawn."""
     app = _get_owned_app(db, current_user, application_id)
+    auto_apply.guard_manual_change(db, app)
     app.status = ApplicationStatus.withdrawn
     db.add(app)
     db.commit()
     db.refresh(app)
     return _to_response(app)
+
+
+@router.post(
+    "/{application_id}/auto-apply/prepare",
+    response_model=ApplicationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def prepare_auto_apply(
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationResponse:
+    """
+    Queue the agent to find the job's Greenhouse/Lever/Ashby form and fill it.
+
+    Nothing is submitted: the filled plan waits in `awaiting_approval`.
+    """
+    app = _get_owned_app(db, current_user, application_id)
+    return _to_response(auto_apply.request_prepare(db, app))
+
+
+@router.post(
+    "/{application_id}/auto-apply/approve",
+    response_model=ApplicationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def approve_auto_apply(
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationResponse:
+    """Approve the prepared plan; the agent submits it and confirms."""
+    app = _get_owned_app(db, current_user, application_id)
+    return _to_response(auto_apply.approve(db, app))
+
+
+@router.post("/{application_id}/auto-apply/cancel", response_model=ApplicationResponse)
+def cancel_auto_apply(
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationResponse:
+    """Discard a pending auto-apply plan."""
+    app = _get_owned_app(db, current_user, application_id)
+    return _to_response(auto_apply.cancel(db, app))
+
+
+@router.post("/{application_id}/auto-apply/resolve", response_model=ApplicationResponse)
+def resolve_auto_apply(
+    application_id: UUID,
+    payload: ResolveUnconfirmedRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationResponse:
+    """
+    Settle an `unconfirmed` submission: received=true marks it applied;
+    received=false allows preparing a fresh attempt.
+    """
+    app = _get_owned_app(db, current_user, application_id)
+    return _to_response(auto_apply.resolve_unconfirmed(db, app, received=payload.received))

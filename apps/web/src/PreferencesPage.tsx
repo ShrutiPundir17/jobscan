@@ -16,6 +16,7 @@ export function PreferencesPage({ onMessage, onError }: Props) {
   const [autoApply, setAutoApply] = useState(false);
   const [minScore, setMinScore] = useState(70);
   const [phone, setPhone] = useState("");
+  const [linkedinUrl, setLinkedinUrl] = useState("");
   const [notifyEmail, setNotifyEmail] = useState(true);
   const [notifyWhatsapp, setNotifyWhatsapp] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -32,6 +33,7 @@ export function PreferencesPage({ onMessage, onError }: Props) {
         setAutoApply(me.auto_apply_enabled);
         setMinScore(me.min_match_score);
         setPhone(me.phone ?? "");
+        setLinkedinUrl(me.linkedin_url ?? "");
         setNotifyEmail(me.notify_email_enabled ?? true);
         setNotifyWhatsapp(me.notify_whatsapp_enabled ?? false);
       } catch (err) {
@@ -54,6 +56,7 @@ export function PreferencesPage({ onMessage, onError }: Props) {
         target_roles: roles,
         preferred_locations: locations,
         phone: phone.trim() || null,
+        linkedin_url: linkedinUrl.trim() || null,
         notify_email_enabled: notifyEmail,
         notify_whatsapp_enabled: notifyWhatsapp,
       });
@@ -111,7 +114,7 @@ export function PreferencesPage({ onMessage, onError }: Props) {
 
       <div className="toggle-row">
         <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
-          Auto-apply when match score is high enough
+          Auto-prepare applications for strong matches — you approve each one before it's sent
         </span>
         <button
           type="button"
@@ -119,6 +122,15 @@ export function PreferencesPage({ onMessage, onError }: Props) {
           onClick={() => setAutoApply((v) => !v)}
         />
       </div>
+
+      <label className="field">
+        LinkedIn profile URL
+        <input
+          value={linkedinUrl}
+          onChange={(e) => setLinkedinUrl(e.target.value)}
+          placeholder="https://www.linkedin.com/in/you"
+        />
+      </label>
 
       <label className="field">
         Phone (WhatsApp)

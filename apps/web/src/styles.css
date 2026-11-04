@@ -1996,6 +1996,54 @@ p {
   margin-top: 0.35rem;
 }
 
+/* Auto-apply status pill + review panel */
+.aa-pill {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+  margin-top: 0.35rem;
+  margin-left: 0.25rem;
+}
+.aa-pill.busy { background: var(--accent-soft); color: var(--accent); }
+.aa-pill.ready { background: var(--success-soft); color: var(--success); }
+.aa-pill.done { background: var(--success-soft); color: var(--success); }
+.aa-pill.warn { background: var(--warning-soft); color: var(--warning); }
+.aa-pill.error { background: var(--danger-soft); color: var(--danger); }
+
+.aa-panel {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.aa-fields {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+}
+.aa-fields td {
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.aa-fields td:first-child {
+  color: var(--text-muted);
+  width: 38%;
+  padding-right: 0.5rem;
+}
+.aa-error {
+  font-size: 0.78rem;
+  color: var(--warning);
+}
+
 /* ??? Notifications drawer ??? */
 .drawer-scrim {
   position: fixed;

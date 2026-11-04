@@ -1,0 +1,11 @@
+# Build context for deploy/Dockerfile.api (repo root)
+.git
+**/.venv
+**/venv
+**/node_modules
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.env
+**/uploads
+apps/web/dist

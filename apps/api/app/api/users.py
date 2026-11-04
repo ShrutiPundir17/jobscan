@@ -42,6 +42,8 @@ def update_preferences(
         current_user.notify_email_enabled = bool(data["notify_email_enabled"])
     if "notify_whatsapp_enabled" in data and data["notify_whatsapp_enabled"] is not None:
         current_user.notify_whatsapp_enabled = bool(data["notify_whatsapp_enabled"])
+    if "linkedin_url" in data:
+        current_user.linkedin_url = data["linkedin_url"]
 
     db.add(current_user)
     db.commit()

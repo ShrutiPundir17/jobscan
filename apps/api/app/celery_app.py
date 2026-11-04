@@ -12,6 +12,7 @@ celery = Celery(
         "app.tasks.job_scanner",
         "app.tasks.job_embeddings",
         "app.tasks.notify_matches",
+        "app.tasks.auto_apply",
     ],
 )
 

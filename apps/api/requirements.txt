@@ -1,6 +1,8 @@
 fastapi==0.115.6
 uvicorn[standard]==0.34.0
 celery[redis]==5.4.0
+# kombu >=5.6 requires redis-py >=6.1; keep in step with redis==5.2.1 below
+kombu==5.5.4
 redis==5.2.1
 sqlalchemy==2.0.36
 alembic==1.14.0
