@@ -24,7 +24,7 @@ function companyInitials(name: string): string {
     .join("");
 }
 
-function postedLabel(iso: string | null): string {
+export function postedLabel(iso: string | null): string {
   if (!iso) return "Recently";
   const ms = Date.now() - new Date(iso).getTime();
   const h = Math.floor(ms / 3600000);

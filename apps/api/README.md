@@ -43,13 +43,13 @@ docker compose exec backend alembic upgrade head
 
 ## Route skeleton
 
-Stub endpoints return **501** until implemented. Auth works for real.
+All endpoints are implemented. Auth works for real.
 
 | Tag | Paths |
 |-----|-------|
 | users | `GET/PATCH /users/me` |
 | resumes | upload, list, get, parse, embed, **set-primary, delete** (all live) |
-| jobs | list, get (still stubbed — return 501) |
+| jobs | **`GET /jobs`** (search `q`, `source`, `location`, `my_locations`, paging) and **`GET /jobs/{id}`** — each job carries *your own* application status; internal fields (`raw_payload`, embeddings) are never returned |
 | matches | **`POST /matches/search`**, **`POST /matches/score`**, **`GET /matches`**, **`GET /matches/{id}`**, **`POST /matches/{id}/tailor`** |
 | applications | list, get, apply, update, withdraw |
 | notifications | **`GET /notifications`**, **`PATCH /notifications/{id}/read`** |

@@ -6,6 +6,7 @@ import { LandingPage } from "./LandingPage";
 import { LoginPage } from "./LoginPage";
 import { MatchesDashboard } from "./MatchesDashboard";
 import { NotificationsDrawer } from "./NotificationsDrawer";
+import { JobsPage } from "./JobsPage";
 import { isOnboarded, OnboardingFlow } from "./OnboardingFlow";
 import { PreferencesPage } from "./PreferencesPage";
 import { ResumePage } from "./ResumePage";
@@ -15,16 +16,19 @@ type Gate = "landing" | "login" | "signup" | "boot" | "onboarding" | "app";
 type Tab =
   | "dashboard"
   | "matches"
+  | "jobs"
   | "applications"
   | "resume"
   | "preferences";
 
-const NAV: { id: Tab; label: string; icon: string }[] = [
-  { id: "dashboard", label: "Dashboard", icon: "▣" },
-  { id: "matches", label: "Matches", icon: "◎" },
-  { id: "applications", label: "Applications", icon: "▤" },
-  { id: "resume", label: "Resume", icon: "☰" },
-  { id: "preferences", label: "Preferences", icon: "⚙" },
+// `short` fits six tabs in the mobile bar.
+const NAV: { id: Tab; label: string; short: string; icon: string }[] = [
+  { id: "dashboard", label: "Dashboard", short: "Home", icon: "▣" },
+  { id: "matches", label: "Matches", short: "Matches", icon: "◎" },
+  { id: "jobs", label: "Jobs", short: "Jobs", icon: "⌕" },
+  { id: "applications", label: "Applications", short: "Apps", icon: "▤" },
+  { id: "resume", label: "Resume", short: "Resume", icon: "☰" },
+  { id: "preferences", label: "Preferences", short: "Prefs", icon: "⚙" },
 ];
 
 function readResetToken(): string | null {
@@ -47,6 +51,9 @@ export default function App() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notifOpen, setNotifOpen] = useState(false);
+  const [searchText, setSearchText] = useState("");
+  const [jobsQuery, setJobsQuery] = useState("");
+  const [jobsQuerySeq, setJobsQuerySeq] = useState(0);
   const [unread, setUnread] = useState(0);
 
   useEffect(() => {
@@ -190,9 +197,27 @@ export default function App() {
           {unread > 0 ? (
             <span className="live-ticker">{unread} new updates</span>
           ) : null}
-          <div className="topbar-search">
-            <input type="search" placeholder="Search jobs, companies…" />
-          </div>
+          <form
+            className="topbar-search"
+            role="search"
+            onSubmit={(e) => {
+              e.preventDefault();
+              setJobsQuery(searchText.trim());
+              setJobsQuerySeq((n) => n + 1);
+              setTab("jobs");
+              setMessage(null);
+              setError(null);
+            }}
+          >
+            <input
+              type="search"
+              placeholder="Search jobs, companies…"
+              aria-label="Search jobs, companies"
+              maxLength={100}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+            />
+          </form>
           <div className="topbar-actions">
             <div className="bell-wrap">
               <button
@@ -231,6 +256,9 @@ export default function App() {
           {tab === "matches" ? (
             <MatchesDashboard onMessage={setMessage} onError={setError} />
           ) : null}
+          {tab === "jobs" ? (
+            <JobsPage query={jobsQuery} querySeq={jobsQuerySeq} onMessage={setMessage} onError={setError} />
+          ) : null}
           {tab === "applications" ? (
             <ApplicationsDashboard onMessage={setMessage} onError={setError} />
           ) : null}
@@ -252,7 +280,7 @@ export default function App() {
             onClick={() => setTab(item.id)}
           >
             <span>{item.icon}</span>
-            {item.label.split(" ")[0]}
+            {item.short}
           </button>
         ))}
       </nav>
