@@ -207,6 +207,26 @@ export const api = {
       retired_auto_apply_plans: number;
     }>(`/resumes/${id}`, { method: "DELETE" });
   },
+  listJobs(
+    params: { q?: string; source?: string; myLocations?: boolean; limit?: number; offset?: number },
+    signal?: AbortSignal,
+  ) {
+    const qs = new URLSearchParams();
+    if (params.q?.trim()) qs.set("q", params.q.trim());
+    if (params.source) qs.set("source", params.source);
+    if (params.myLocations) qs.set("my_locations", "true");
+    qs.set("limit", String(params.limit ?? 20));
+    qs.set("offset", String(params.offset ?? 0));
+    return request<{
+      items: import("./types").JobListItem[];
+      total: number;
+      limit: number;
+      offset: number;
+    }>(`/jobs?${qs.toString()}`, { signal });
+  },
+  getJob(id: string) {
+    return request<import("./types").JobDetail>(`/jobs/${id}`);
+  },
   listMatches(minScore?: number) {
     const q = minScore != null ? `?min_score=${minScore}` : "";
     return request<{

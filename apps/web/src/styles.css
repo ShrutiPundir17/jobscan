@@ -1932,6 +1932,58 @@ p {
   background: var(--accent-soft);
 }
 
+.jobs-search {
+  width: min(320px, 100%);
+  border: 1px solid var(--border);
+  background: var(--bg);
+  border-radius: 999px;
+  padding: 0.5rem 0.95rem;
+  color: inherit;
+}
+
+.job-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.8rem 0.95rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+}
+
+.job-row:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.job-row-title {
+  font-weight: 600;
+  font-size: 0.92rem;
+}
+
+.job-row-snippet {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.job-row-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.35rem;
+}
+
+.is-refreshing {
+  opacity: 0.55;
+  transition: opacity 150ms;
+}
+
 .resume-row-main {
   flex: 1;
   min-width: 0;
@@ -2092,6 +2144,8 @@ p {
   flex: 1;
   overflow: auto;
   padding: 0.75rem;
+  /* .stack is a grid: without this, short content stretches rows to fill the drawer. */
+  align-content: start;
 }
 
 .notify-item {
@@ -2170,7 +2224,9 @@ p {
 
   .mobile-tabs {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    /* One column per tab, however many tabs there are. */
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
     position: fixed;
     bottom: 0;
     left: 0;

@@ -172,3 +172,18 @@ export type ApplicationItem = {
   created_at: string;
   updated_at: string;
 };
+
+export type MyApplicationSummary = {
+  id: string;
+  status: string;
+  match_score: number | null;
+  verdict: string | null;
+};
+
+export type JobListItem = MatchJob & {
+  created_at: string;
+  description_snippet: string | null;
+  my_application: MyApplicationSummary | null;
+};
+
+export type JobDetail = JobListItem & { description: string | null };
