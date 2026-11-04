@@ -187,3 +187,13 @@ export type JobListItem = MatchJob & {
 };
 
 export type JobDetail = JobListItem & { description: string | null };
+
+export type PortalHealth = {
+  name: string;
+  state: "ok" | "cooling_down" | "failing" | "unknown";
+  cooldown_until: string | null;
+  last_ok_at: string | null;
+  last_scraped: number | null;
+  last_error: string | null;
+  last_error_kind: string | null;
+};

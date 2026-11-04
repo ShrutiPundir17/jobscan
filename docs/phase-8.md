@@ -118,7 +118,7 @@ docker run -d --name jobagent-test-pg -p 55499:5432 `
   -e POSTGRES_USER=jobagent -e POSTGRES_PASSWORD=jobagent -e POSTGRES_DB=jobagent_test `
   pgvector/pgvector:pg16
 cd apps/api
-pip install -r requirements.txt pytest httpx
+pip install -r requirements-dev.txt
 playwright install chromium
 python -m pytest tests
 ```
