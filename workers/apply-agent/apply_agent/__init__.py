@@ -12,8 +12,10 @@ from apply_agent.detect import (
     detect_ats,
     find_ats_urls,
     first_ats_target,
+    linkedin_apply_target,
+    unique_ats_target,
 )
-from apply_agent.forms import ApplicantProfile
+from apply_agent.forms import ApplicantProfile, title_overlaps
 
 __all__ = [
     "ATS_HOSTS",
@@ -27,5 +29,8 @@ __all__ = [
     "detect_ats",
     "find_ats_urls",
     "first_ats_target",
+    "linkedin_apply_target",
+    "unique_ats_target",
     "not_ready_reason",
+    "title_overlaps",
 ]

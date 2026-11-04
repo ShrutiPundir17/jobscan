@@ -287,6 +287,12 @@ export const api = {
       { method: "POST" },
     );
   },
+  resolveAutoApply(applicationId: string, received: boolean) {
+    return request<import("./types").ApplicationItem>(
+      `/applications/${applicationId}/auto-apply/resolve`,
+      { method: "POST", body: JSON.stringify({ received }) },
+    );
+  },
   withdrawApplication(applicationId: string) {
     return request<import("./types").ApplicationItem>(
       `/applications/${applicationId}/withdraw`,

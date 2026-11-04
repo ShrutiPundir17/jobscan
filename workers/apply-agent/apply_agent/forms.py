@@ -5,12 +5,18 @@ We enumerate the application form's controls in the page (tagging each with
 `data-ja-idx`), map the ones we can answer truthfully from the applicant
 profile, and report every required control we could not answer. Anything
 unanswered or a visible captcha means a human has to finish the form.
+
+Field matching is deliberately strict: a label must *be* "Email", not merely
+contain it ("Referrer email", "Name of current employer" must never be filled
+with the applicant's details).
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 # Tags controls inside the chosen application form and returns metadata.
@@ -70,7 +76,10 @@ INSPECT_JS = r"""
       idx, tag: el.tagName.toLowerCase(), type,
       name: el.getAttribute('name') || '', id: el.id || '',
       label,
-      required: !!(el.required || el.getAttribute('aria-required') === 'true' || /\*/.test(label)),
+      accept: el.getAttribute('accept') || '',
+      required: !!(el.required || el.getAttribute('aria-required') === 'true' || /[*✱]/.test(label)),
+      // Dry runs mark the resume input as planned instead of attaching the file.
+      planned: el.hasAttribute('data-ja-planned'),
       empty,
     });
     idx += 1;
@@ -98,19 +107,24 @@ CAPTCHA_JS = r"""
 }
 """
 
+# Picks the submit control by its text only. Returns a reason string on failure;
+# never falls back to "some button" (an 'Add another' / 'Attach' click is not a submit).
 SUBMIT_JS = r"""
 () => {
   const form = document.querySelector('form[data-ja-form]');
-  if (!form) return false;
+  if (!form) return 'Application form disappeared before submitting.';
+  const text = (b) => (b.innerText || b.value || b.getAttribute('aria-label') || '').replace(/\s+/g, ' ').trim();
   const cands = [...form.querySelectorAll('button, input[type=submit]')]
-    .filter(b => !b.disabled && (b.offsetWidth || b.offsetHeight));
-  const text = (b) => (b.innerText || b.value || '').trim();
-  const btn = cands.find(b => /submit|send application|apply/i.test(text(b)) && (b.type || 'submit') === 'submit')
-    || cands.find(b => /submit application|submit/i.test(text(b)))
-    || cands.find(b => (b.getAttribute('type') || 'submit') === 'submit');
-  if (!btn) return false;
-  btn.setAttribute('data-ja-submit', '1');
-  return true;
+    .filter(b => !b.disabled && (b.offsetWidth || b.offsetHeight) && b.type === 'submit');
+  const ok = /^(submit|apply|send)( my| your)?( job)?( application)?( now)?$|^submit\b/i;
+  const bad = /linkedin|indeed|autofill|auto-fill|upload|attach|add|remove|cancel|back|save|draft/i;
+  const hits = cands.filter(b => ok.test(text(b)) && !bad.test(text(b)));
+  if (hits.length !== 1) {
+    return hits.length ? 'More than one submit button — not guessing which to click.'
+                       : "Could not identify the form's submit button.";
+  }
+  hits[0].setAttribute('data-ja-submit', '1');
+  return '';
 }
 """
 
@@ -122,18 +136,66 @@ PAGE_STATE_JS = r"""
     const t = clean(el.innerText);
     if (t && t.length < 200 && (el.offsetWidth || el.offsetHeight)) errs.push(t);
   }
-  return { text: clean(document.body ? document.body.innerText : '').slice(0, 4000), errors: [...new Set(errs)].slice(0, 8) };
+  const form = document.querySelector('form[data-ja-form]');
+  const formVisible = !!(form && (form.offsetWidth || form.offsetHeight));
+  return {
+    text: clean(document.body ? document.body.innerText : '').slice(0, 200000),
+    errors: [...new Set(errs)].slice(0, 8),
+    form_present: formVisible,
+  };
 }
 """
 
+TITLE_JS = r"""
+() => {
+  const h = document.querySelector('h1') || document.querySelector('h2');
+  return ((h && h.innerText) || document.title || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+}
+"""
+
+# Only phrases that mean "we got it". Not "thank you for your interest" —
+# job descriptions end with that line all the time.
 CONFIRMATION_RE = re.compile(
-    r"thank(s| you)( so much)? for (applying|your application|your interest)"
+    r"thank(s| you)( so much)? for (applying|your application|submitting)"
     r"|application (has been |was )?(successfully )?(submitted|received)"
-    r"|we('ve| have) received your application"
+    r"|we('ve| have) (successfully )?received your application"
     r"|your application (has been|was) (successfully )?(submitted|received|sent)",
     re.IGNORECASE,
 )
-CONFIRMATION_URL_RE = re.compile(r"confirmation|/thanks|thank-you|thank_you|submitted", re.IGNORECASE)
+CONFIRMATION_URL_RE = re.compile(r"confirmation|/thanks|thank-you|thank_you|/submitted|/success", re.IGNORECASE)
+
+
+def confirmation_hits(text: str) -> Counter[str]:
+    return Counter(m.group(0).lower() for m in CONFIRMATION_RE.finditer(text or ""))
+
+
+def judge_after_submit(
+    *,
+    base_url: str,
+    base_hits: Counter[str],
+    url: str,
+    state: dict[str, Any],
+) -> tuple[str, str | None]:
+    """
+    Decide what a page looks like after the submit click.
+
+    Returns ("confirmed", evidence) | ("rejected", reason) | ("pending", None).
+    Confirmation must be *new* compared with the pre-click snapshot, and the
+    form must be gone or the page must have navigated.
+    """
+    strip = lambda u: (u or "").split("#", 1)[0]  # noqa: E731
+    navigated = strip(url) != strip(base_url)
+    form_present = bool(state.get("form_present"))
+
+    if navigated and CONFIRMATION_URL_RE.search(url) and not CONFIRMATION_URL_RE.search(base_url):
+        return "confirmed", url
+    hits = confirmation_hits(state.get("text", ""))
+    new = [phrase for phrase, n in hits.items() if n > base_hits.get(phrase, 0)]
+    if new and (navigated or not form_present):
+        return "confirmed", new[0]
+    if not navigated and form_present and state.get("errors"):
+        return "rejected", "; ".join(state["errors"])
+    return "pending", None
 
 
 @dataclass
@@ -152,46 +214,71 @@ class ApplicantProfile:
         return " ".join(p for p in (self.first_name, self.last_name) if p).strip()
 
 
-_RULES: list[tuple[str, re.Pattern[str]]] = [
-    ("first_name", re.compile(r"\bfirst[\s_-]*name\b|given[\s_-]*name|^first$", re.I)),
-    ("last_name", re.compile(r"\blast[\s_-]*name\b|surname|family[\s_-]*name|^last$", re.I)),
-    ("email", re.compile(r"e-?mail", re.I)),
-    ("phone", re.compile(r"phone|mobile", re.I)),
-    ("linkedin_url", re.compile(r"linked\s*in", re.I)),
-    ("full_name", re.compile(r"^(full[\s_-]*|your[\s_-]*|legal[\s_-]*)?name\b|_systemfield_name", re.I)),
+def normalize_label(text: str) -> str:
+    t = (text or "").lower()
+    t = re.sub(r"\((required|optional)\)", " ", t)
+    t = re.sub(r"[*✱:?]", " ", t)
+    t = re.sub(r"[^a-z0-9/'\- ]+", " ", t)
+    return re.sub(r"\s+", " ", t).strip()
+
+
+# Whole-label patterns (after normalize_label).
+_LABEL_RULES: list[tuple[str, re.Pattern[str]]] = [
+    ("first_name", re.compile(r"^(legal |preferred )?first name$|^given name$|^first$")),
+    ("last_name", re.compile(r"^(legal )?(last name|surname|family name)$|^last$")),
+    ("full_name", re.compile(r"^(full |legal |your |candidate )?name$|^(full )?name first and last$|^first and last name$")),
+    ("email", re.compile(r"^(your |personal )?e-?mail( address)?$")),
+    ("email_confirm", re.compile(r"^(confirm|re-?enter|repeat) (your )?e-?mail( address)?$")),
+    ("phone", re.compile(r"^(your )?(phone|mobile|cell|mobile phone|cell phone|phone number|mobile number|contact number)( number)?$")),
+    ("linkedin_url", re.compile(r"^linkedin( profile)?( url| link)?$")),
 ]
-_RESUME_RE = re.compile(r"resume|résumé|\bcv\b|curriculum", re.I)
-_COVER_RE = re.compile(r"cover[\s_-]*letter|additional[\s_-]*information|anything else|comments", re.I)
+# Exact name/id attributes used by Greenhouse / Lever / Ashby.
+_ATTR_RULES: dict[str, str] = {
+    "first_name": "first_name",
+    "firstname": "first_name",
+    "last_name": "last_name",
+    "lastname": "last_name",
+    "name": "full_name",
+    "full_name": "full_name",
+    "_systemfield_name": "full_name",
+    "email": "email",
+    "_systemfield_email": "email",
+    "phone": "phone",
+    "urls[linkedin]": "linkedin_url",
+}
+_COVER_RE = re.compile(r"^(cover letter|additional information|anything else\b.*|comments)$")
+_RESUME_RE = re.compile(r"resume|résumé|\bcv\b|curriculum")
+_COVER_ANY_RE = re.compile(r"cover")
+
+_TEXT_TYPES = {"text", "email", "tel", "url", "input", ""}
 
 
 def classify_control(control: dict[str, Any]) -> str | None:
     """Map one inspected control to a profile key, or None if we should not answer it."""
     ctype = control.get("type", "")
-    label = str(control.get("label") or "")
-    name = str(control.get("name") or "")
-    cid = str(control.get("id") or "")
-    keys = [label, name, cid]
+    label = normalize_label(str(control.get("label") or ""))
+    attrs = [str(control.get("name") or "").lower(), str(control.get("id") or "").lower()]
 
     if ctype == "file":
-        if any(_RESUME_RE.search(k) for k in keys) and not any(_COVER_RE.search(k) for k in keys):
+        hay = " ".join([label, *attrs])
+        if _RESUME_RE.search(hay) and not _COVER_ANY_RE.search(hay):
             return "resume"
         return None
     if control.get("tag") == "textarea":
-        return "cover_letter" if any(_COVER_RE.search(k) for k in keys) else None
-    if control.get("tag") != "input" or ctype in {"checkbox", "radio", "date", "number"}:
+        return "cover_letter" if _COVER_RE.match(label) or "comments" in attrs else None
+    if control.get("tag") != "input" or ctype not in _TEXT_TYPES:
         return None
-    if ctype == "email":
-        return "email"
-    if ctype == "tel":
-        return "phone"
-    # Lever's plain `name="name"` full-name input.
-    if name == "name" or cid == "name":
-        return "full_name"
-    if re.search(r"urls\[linkedin\]", name, re.I):
-        return "linkedin_url"
-    for key, pattern in _RULES:
-        if any(pattern.search(k) for k in keys if k):
-            return key
+
+    if label:
+        for key, pattern in _LABEL_RULES:
+            if pattern.match(label):
+                return key
+        # A labelled field we don't recognise is someone else's question.
+        if not any(a in _ATTR_RULES for a in attrs):
+            return None
+    for attr in attrs:
+        if attr in _ATTR_RULES:
+            return _ATTR_RULES[attr]
     return None
 
 
@@ -201,6 +288,7 @@ def profile_value(profile: ApplicantProfile, key: str) -> str | None:
         "last_name": profile.last_name,
         "full_name": profile.full_name,
         "email": profile.email,
+        "email_confirm": profile.email,
         "phone": profile.phone,
         "linkedin_url": profile.linkedin_url,
         "cover_letter": profile.cover_letter,
@@ -211,22 +299,55 @@ def profile_value(profile: ApplicantProfile, key: str) -> str | None:
     return value or None
 
 
+_MIME_EXT = {
+    "application/pdf": {".pdf"},
+    "application/msword": {".doc"},
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": {".docx"},
+    "text/plain": {".txt"},
+    "application/rtf": {".rtf"},
+    "text/rtf": {".rtf"},
+}
+
+
+def file_accepted(filename: str | None, accept: str | None) -> bool:
+    """Mirror the browser's `accept` filter so we never pick a file the form rejects."""
+    if not filename:
+        return False
+    tokens = [t.strip().lower() for t in (accept or "").split(",") if t.strip()]
+    if not tokens:
+        return True
+    ext = Path(filename).suffix.lower()
+    for token in tokens:
+        if token.startswith(".") and token == ext:
+            return True
+        if token in {"*/*", "*"}:
+            return True
+        if token.endswith("/*") and ext in {e for m, es in _MIME_EXT.items() if m.startswith(token[:-1]) for e in es}:
+            return True
+        if ext in _MIME_EXT.get(token, set()):
+            return True
+    return False
+
+
 def plan_fills(
     controls: list[dict[str, Any]],
     profile: ApplicantProfile,
 ) -> list[tuple[dict[str, Any], str, str]]:
     """Return (control, key, value) for each control we will fill — at most one per key."""
-    has_split_name = any(classify_control(c) in {"first_name", "last_name"} for c in controls)
+    keys = {c["idx"]: classify_control(c) for c in controls}
+    has_split_name = any(k in {"first_name", "last_name"} for k in keys.values())
     used: set[str] = set()
     plan: list[tuple[dict[str, Any], str, str]] = []
     for control in controls:
-        key = classify_control(control)
+        key = keys[control["idx"]]
         if key is None or key in used:
             continue
         if key == "full_name" and has_split_name:
             continue
         value = profile_value(profile, key)
         if value is None:
+            continue
+        if key == "resume" and not file_accepted(profile.resume_filename, control.get("accept")):
             continue
         used.add(key)
         plan.append((control, key, value))
@@ -238,12 +359,26 @@ def unanswered_required(controls: list[dict[str, Any]]) -> list[str]:
     out: list[str] = []
     seen_groups: set[str] = set()
     for c in controls:
-        if not c.get("required") or not c.get("empty"):
+        if not c.get("required") or not c.get("empty") or c.get("planned"):
             continue
         if c.get("type") in {"radio", "checkbox"} and c.get("name"):
             if c["name"] in seen_groups:
                 continue
             seen_groups.add(c["name"])
         label = str(c.get("label") or c.get("name") or c.get("id") or "Unlabelled field")
-        out.append(label.rstrip(" *").strip() or "Unlabelled field")
+        out.append(label.rstrip(" *✱").strip() or "Unlabelled field")
     return out
+
+
+def title_overlaps(job_title: str | None, form_title: str | None) -> bool:
+    """Loose check that the opened form is for the job we matched (warns, never blocks)."""
+    stop = {"and", "the", "for", "with", "job", "jobs", "role", "at", "of", "in", "a", "an", "-", "–", "|",
+            "application", "apply"}
+    # Words every tech title shares prove nothing ("Data Engineer" vs "Backend Engineer").
+    stop |= {"engineer", "engineering", "developer", "software", "senior", "sr", "junior", "jr", "lead",
+             "staff", "principal", "intern", "internship", "associate", "ii", "iii", "iv", "trainee", "fresher"}
+    tokens = lambda s: {w for w in re.findall(r"[a-z0-9+#.]+", (s or "").lower()) if w not in stop and len(w) > 1}  # noqa: E731
+    a, b = tokens(job_title), tokens(form_title)
+    if not a or not b:
+        return True
+    return bool(a & b)

@@ -23,6 +23,7 @@ from app.services.match_persist import (
     list_persisted_matches,
     serialize_skill_gaps,
 )
+from app.services.auto_apply import effective_error, effective_state
 from app.services.match_score import deep_score_matches
 from app.services.match_search import resolve_resume_for_match, search_similar_jobs
 from app.services.resume_tailor import tailor_application_resume
@@ -46,9 +47,9 @@ def _to_persisted_response(app) -> PersistedMatchResponse:
         tailored_bullets=bullets,
         tailored_resume_text=app.tailored_resume_text,
         resume_id=app.resume_id,
-        auto_apply_state=app.auto_apply_state,
+        auto_apply_state=effective_state(app),
         auto_apply_provider=app.auto_apply_provider,
-        auto_apply_error=app.auto_apply_error,
+        auto_apply_error=effective_error(app),
         job=job,
         created_at=app.created_at,
         updated_at=app.updated_at,

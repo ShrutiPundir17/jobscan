@@ -73,3 +73,27 @@ def test_first_ats_target_order():
         f"see https://jobs.ashbyhq.com/acme/{ASHBY_ID}",
     )
     assert t and t.provider == ASHBY
+
+
+def test_unique_target_rejects_ambiguous_descriptions():
+    from apply_agent import unique_ats_target
+
+    one = "Apply at https://boards.greenhouse.io/acme/jobs/55"
+    two = one + " — also see https://boards.greenhouse.io/acme/jobs/99"
+    assert unique_ats_target(one).job_id == "55"
+    assert unique_ats_target(two) is None
+    assert unique_ats_target(None) is None
+
+
+def test_linkedin_only_trusts_apply_url_element():
+    from apply_agent import linkedin_apply_target
+
+    other = f"https://jobs.lever.co/other/{ASHBY_ID}"
+    page = (
+        f'<a href="{other}">Similar job</a>'
+        '<code id="applyUrl" style="display: none"><!--"https://www.linkedin.com/jobs/view/externalApply/1?url='
+        f'https%3A%2F%2Fjobs.lever.co%2Facme%2F{LEVER_ID}&amp;urlHash=x"--></code>'
+    )
+    t = linkedin_apply_target(page)
+    assert t and t.company == "acme"
+    assert linkedin_apply_target(f'<a href="{other}">Similar job</a>') is None  # Easy Apply job: no applyUrl

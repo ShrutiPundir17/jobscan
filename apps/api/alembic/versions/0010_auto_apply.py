@@ -22,6 +22,8 @@ def upgrade() -> None:
     op.add_column("applications", sa.Column("auto_apply_url", sa.String(length=2048), nullable=True))
     op.add_column("applications", sa.Column("auto_apply_plan", JSONB(), nullable=True))
     op.add_column("applications", sa.Column("auto_apply_error", sa.Text(), nullable=True))
+    # Token of the queued task allowed to act on this row (atomic claim; stale tasks no-op).
+    op.add_column("applications", sa.Column("auto_apply_attempt", sa.String(length=36), nullable=True))
     op.add_column(
         "applications",
         sa.Column("auto_apply_updated_at", sa.DateTime(timezone=True), nullable=True),
@@ -35,6 +37,7 @@ def downgrade() -> None:
     op.drop_index("ix_applications_auto_apply_state", table_name="applications")
     for col in (
         "auto_apply_updated_at",
+        "auto_apply_attempt",
         "auto_apply_error",
         "auto_apply_plan",
         "auto_apply_url",

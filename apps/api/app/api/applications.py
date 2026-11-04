@@ -46,6 +46,10 @@ class ApplicationResponse(BaseModel):
     updated_at: datetime
 
 
+class ResolveUnconfirmedRequest(BaseModel):
+    received: bool = Field(description="True if the employer did receive the application.")
+
+
 class ApplicationListResponse(BaseModel):
     items: list[ApplicationResponse]
     total: int
@@ -68,6 +72,13 @@ def _gaps(app: Application) -> list[str]:
     return []
 
 
+def _public_plan(plan: object) -> dict | None:
+    # The applicant snapshot duplicates fields already shown in `filled`.
+    if not isinstance(plan, dict):
+        return None
+    return {k: v for k, v in plan.items() if k != "applicant"}
+
+
 def _to_response(app: Application) -> ApplicationResponse:
     return ApplicationResponse(
         id=app.id,
@@ -81,11 +92,11 @@ def _to_response(app: Application) -> ApplicationResponse:
         notes=app.notes,
         applied_at=app.applied_at,
         resume_id=app.resume_id,
-        auto_apply_state=app.auto_apply_state,
+        auto_apply_state=auto_apply.effective_state(app),
         auto_apply_provider=app.auto_apply_provider,
         auto_apply_url=app.auto_apply_url,
-        auto_apply_plan=app.auto_apply_plan if isinstance(app.auto_apply_plan, dict) else None,
-        auto_apply_error=app.auto_apply_error,
+        auto_apply_plan=_public_plan(app.auto_apply_plan),
+        auto_apply_error=auto_apply.effective_error(app),
         job=MatchJobSummary.model_validate(app.job),
         created_at=app.created_at,
         updated_at=app.updated_at,
@@ -165,7 +176,7 @@ def apply_to_job(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Cannot apply from status '{app.status.value}'.",
         )
-    auto_apply.guard_manual_change(app)
+    auto_apply.guard_manual_change(db, app)
     now = datetime.now(UTC)
     app.status = ApplicationStatus.applied
     app.applied_at = now
@@ -194,7 +205,7 @@ def update_application(
     if "status" in data and data["status"] is not None:
         new_status = data["status"]
         if new_status != app.status:
-            auto_apply.guard_manual_change(app)
+            auto_apply.guard_manual_change(db, app)
         app.status = new_status
         if new_status == ApplicationStatus.applied and app.applied_at is None:
             app.applied_at = datetime.now(UTC)
@@ -218,7 +229,7 @@ def withdraw_application(
 ) -> ApplicationResponse:
     """Mark an application as withdrawn."""
     app = _get_owned_app(db, current_user, application_id)
-    auto_apply.guard_manual_change(app)
+    auto_apply.guard_manual_change(db, app)
     app.status = ApplicationStatus.withdrawn
     db.add(app)
     db.commit()
@@ -269,3 +280,18 @@ def cancel_auto_apply(
     """Discard a pending auto-apply plan."""
     app = _get_owned_app(db, current_user, application_id)
     return _to_response(auto_apply.cancel(db, app))
+
+
+@router.post("/{application_id}/auto-apply/resolve", response_model=ApplicationResponse)
+def resolve_auto_apply(
+    application_id: UUID,
+    payload: ResolveUnconfirmedRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationResponse:
+    """
+    Settle an `unconfirmed` submission: received=true marks it applied;
+    received=false allows preparing a fresh attempt.
+    """
+    app = _get_owned_app(db, current_user, application_id)
+    return _to_response(auto_apply.resolve_unconfirmed(db, app, received=payload.received))

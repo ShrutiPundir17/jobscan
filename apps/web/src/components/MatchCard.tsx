@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { autoApplyBadge, canPrepare, isAutoApplyBusy } from "../autoApply";
+import { autoApplyBadge, canPrepare, isAutoApplyBusy, isFresh } from "../autoApply";
 import type { PersistedMatch } from "../types";
 import { ScoreGauge } from "./ScoreGauge";
 
@@ -178,7 +178,7 @@ export function MatchCard({
             title="Fill the employer's application form for you to review before sending"
             onClick={onAutoApply}
           >
-            {aaBusy ? "Working…" : match.auto_apply_state ? "Retry auto-apply" : "Auto-apply"}
+            {aaBusy ? "Working…" : isFresh(match.auto_apply_state) ? "Auto-apply" : "Retry auto-apply"}
           </button>
         ) : null}
         <a className="btn btn-secondary btn-sm" href={match.job.url} target="_blank" rel="noreferrer">
@@ -205,6 +205,11 @@ export function MatchCard({
       {match.auto_apply_state === "awaiting_approval" ? (
         <p className="muted" style={{ fontSize: "0.78rem", marginTop: 8 }}>
           Form filled and waiting for you — open <strong>Applications</strong> to review and send.
+        </p>
+      ) : match.auto_apply_state === "unconfirmed" ? (
+        <p className="aa-error" style={{ marginTop: 8 }}>
+          Submitted, but no confirmation was seen — open <strong>Applications</strong> to tell us if it
+          arrived.
         </p>
       ) : match.auto_apply_error && !aaBusy ? (
         <p className="aa-error" style={{ marginTop: 8 }}>

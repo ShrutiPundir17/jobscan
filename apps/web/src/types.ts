@@ -125,12 +125,19 @@ export type AutoApplyState =
   | "needs_manual"
   | "unsupported"
   | "submitting"
+  | "sending"
   | "submitted"
-  | "failed";
+  | "unconfirmed"
+  | "failed"
+  | "dismissed";
 
 export type AutoApplyPlan = {
   provider: string;
   url: string;
+  form_title?: string;
+  job_title?: string;
+  title_match?: boolean;
+  notes?: string[];
   filled: Array<{ key: string; label: string; value: string }>;
   unanswered_required: string[];
   captcha: boolean;

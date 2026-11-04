@@ -69,25 +69,27 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
 
   async function runAutoApply(
     id: string,
-    action: "prepare" | "approve" | "cancel",
+    action: "prepare" | "approve" | "cancel" | "received" | "not_received",
   ) {
     setBusyId(id);
     onError(null);
     try {
-      const updated =
-        action === "prepare"
-          ? await api.prepareAutoApply(id)
-          : action === "approve"
-            ? await api.approveAutoApply(id)
-            : await api.cancelAutoApply(id);
-      replaceItem(updated);
-      onMessage(
-        action === "prepare"
-          ? "Agent is filling the form — you'll review it before anything is sent."
-          : action === "approve"
-            ? "Approved — submitting now."
-            : "Auto-apply plan discarded.",
-      );
+      const calls = {
+        prepare: () => api.prepareAutoApply(id),
+        approve: () => api.approveAutoApply(id),
+        cancel: () => api.cancelAutoApply(id),
+        received: () => api.resolveAutoApply(id, true),
+        not_received: () => api.resolveAutoApply(id, false),
+      };
+      const messages = {
+        prepare: "Agent is filling the form — you'll review it before anything is sent.",
+        approve: "Approved — submitting now.",
+        cancel: "Auto-apply plan discarded.",
+        received: "Marked as applied.",
+        not_received: "Noted — you can prepare it again.",
+      };
+      replaceItem(await calls[action]());
+      onMessage(messages[action]);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Auto-apply request failed");
     } finally {
@@ -202,7 +204,7 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                       : new Date(a.created_at).toLocaleDateString()}
                   </div>
                   <span className="method-pill">{methodLabel(a)}</span>
-                  {a.auto_apply_state && a.auto_apply_state !== "submitted" ? (
+                  {autoApplyBadge(a.auto_apply_state) && a.auto_apply_state !== "submitted" ? (
                     <span className={`aa-pill ${autoApplyBadge(a.auto_apply_state)?.tone ?? ""}`}>
                       {autoApplyBadge(a.auto_apply_state)?.label}
                     </span>
@@ -238,6 +240,9 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                 onPrepare={() => void runAutoApply(selected.id, "prepare")}
                 onApprove={() => void runAutoApply(selected.id, "approve")}
                 onCancel={() => void runAutoApply(selected.id, "cancel")}
+                onResolve={(received) =>
+                  void runAutoApply(selected.id, received ? "received" : "not_received")
+                }
               />
               <div className="block-label">Move to</div>
               <div className="chip-row">

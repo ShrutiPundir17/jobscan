@@ -1,4 +1,4 @@
-import { autoApplyBadge, canPrepare, isAutoApplyBusy, PROVIDER_LABEL } from "../autoApply";
+import { autoApplyBadge, canPrepare, isAutoApplyBusy, isFresh, PROVIDER_LABEL } from "../autoApply";
 import type { ApplicationItem } from "../types";
 
 type Props = {
@@ -7,20 +7,31 @@ type Props = {
   onPrepare: () => void;
   onApprove: () => void;
   onCancel: () => void;
+  onResolve: (received: boolean) => void;
 };
 
 const CLOSED = ["applied", "interviewing", "offered", "rejected", "withdrawn"];
 
-export function AutoApplyPanel({ item, busy, onPrepare, onApprove, onCancel }: Props) {
+export function AutoApplyPanel({ item, busy, onPrepare, onApprove, onCancel, onResolve }: Props) {
   const state = item.auto_apply_state;
   const plan = item.auto_apply_plan;
   const badge = autoApplyBadge(state);
   const working = isAutoApplyBusy(state);
+  const closed = CLOSED.includes(item.status);
   const provider = item.auto_apply_provider
     ? PROVIDER_LABEL[item.auto_apply_provider] ?? item.auto_apply_provider
     : null;
 
-  if (!state && CLOSED.includes(item.status)) return null;
+  if (isFresh(state) && closed) return null;
+
+  const showPlan =
+    !!plan &&
+    plan.filled.length > 0 &&
+    !working &&
+    (state === "awaiting_approval" ||
+      state === "needs_manual" ||
+      state === "submitted" ||
+      state === "unconfirmed");
 
   return (
     <section className="aa-panel" aria-label="Auto-apply">
@@ -28,10 +39,14 @@ export function AutoApplyPanel({ item, busy, onPrepare, onApprove, onCancel }: P
         <div className="block-label" style={{ margin: 0 }}>
           Auto-apply
         </div>
-        {badge ? <span className={`aa-pill ${badge.tone}`} style={{ margin: 0 }}>{badge.label}</span> : null}
+        {badge ? (
+          <span className={`aa-pill ${badge.tone}`} style={{ margin: 0 }}>
+            {badge.label}
+          </span>
+        ) : null}
       </div>
 
-      {!state ? (
+      {isFresh(state) ? (
         <p className="muted" style={{ fontSize: "0.8rem" }}>
           The agent finds this job's Greenhouse, Lever or Ashby form and fills it from your
           profile and resume. You review everything before anything is sent.
@@ -40,18 +55,68 @@ export function AutoApplyPanel({ item, busy, onPrepare, onApprove, onCancel }: P
 
       {working ? (
         <p className="muted" style={{ fontSize: "0.8rem" }}>
-          {state === "submitting"
+          {state === "submitting" || state === "sending"
             ? "Submitting your approved application and waiting for the employer's confirmation…"
-            : "Opening the application form and filling it in — usually under a minute…"}
+            : "Opening the application form and filling it in — nothing is sent at this step…"}
         </p>
       ) : null}
 
       {item.auto_apply_error && !working ? <p className="aa-error">{item.auto_apply_error}</p> : null}
 
-      {plan && plan.filled.length > 0 && state !== "unsupported" && !working ? (
+      {state === "unconfirmed" ? (
+        <div className="stack" style={{ gap: "0.5rem" }}>
+          <p style={{ fontSize: "0.8rem" }}>
+            Did {item.job.company} receive it? Check your inbox for a confirmation email
+            {item.auto_apply_url ? (
+              <>
+                {" "}or{" "}
+                <a href={item.auto_apply_url} target="_blank" rel="noreferrer">
+                  the job page
+                </a>
+              </>
+            ) : null}
+            . We won't send it again until you tell us.
+          </p>
+          <div className="chip-row">
+            <button type="button" className="btn btn-primary btn-sm" disabled={busy} onClick={() => onResolve(true)}>
+              Yes, it was received
+            </button>
+            <button
+              type="button"
+              className="btn btn-secondary btn-sm"
+              disabled={busy}
+              onClick={() => {
+                if (
+                  window.confirm(
+                    "Only choose this if you're sure it didn't arrive — retrying could send a duplicate application.",
+                  )
+                ) {
+                  onResolve(false);
+                }
+              }}
+            >
+              No, it wasn't
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {showPlan && plan ? (
         <>
+          {plan.form_title ? (
+            <div className="muted" style={{ fontSize: "0.78rem" }}>
+              Form: <strong>{plan.form_title}</strong>
+            </div>
+          ) : null}
+          {plan.title_match === false ? (
+            <p className="aa-error">
+              This form's title doesn't look like “{plan.job_title ?? item.job.title}”. Open the form
+              and check it's the right job before approving.
+            </p>
+          ) : null}
           <div className="muted" style={{ fontSize: "0.78rem" }}>
-            {state === "submitted" ? "Sent" : "Will send"} via {provider ?? "ATS"}
+            {state === "submitted" || state === "unconfirmed" ? "Sent" : "Will send"} via{" "}
+            {provider ?? "ATS"}
             {item.auto_apply_url ? (
               <>
                 {" · "}
@@ -90,7 +155,7 @@ export function AutoApplyPanel({ item, busy, onPrepare, onApprove, onCancel }: P
         </>
       ) : null}
 
-      {plan && plan.unanswered_required.length > 0 && !working ? (
+      {plan && plan.unanswered_required.length > 0 && state === "needs_manual" ? (
         <div>
           <div className="block-label">Questions only you can answer</div>
           <ul className="gap-list">
@@ -132,12 +197,17 @@ export function AutoApplyPanel({ item, busy, onPrepare, onApprove, onCancel }: P
             Finish on {provider ?? "employer site"}
           </a>
         ) : null}
-        {canPrepare(state) && !CLOSED.includes(item.status) ? (
+        {canPrepare(state) && !closed ? (
           <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={onPrepare}>
-            {state ? "Try again" : "Prepare auto-apply"}
+            {isFresh(state) ? "Prepare auto-apply" : "Try again"}
           </button>
         ) : null}
-        {state && state !== "submitted" && state !== "submitting" ? (
+        {state &&
+        state !== "dismissed" &&
+        state !== "submitted" &&
+        state !== "unconfirmed" &&
+        state !== "submitting" &&
+        state !== "sending" ? (
           <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={onCancel}>
             Discard
           </button>
