@@ -1,0 +1,44 @@
+# Render Blueprint — free web service for the JobAgent API.
+# Render dashboard → New → Blueprint → pick this repo. Fill the "sync: false"
+# secrets when prompted. Step-by-step guide: docs/deploy-free.md
+services:
+  - type: web
+    name: jobagent-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./deploy/Dockerfile.api
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # No background worker on the free plan: tasks run inside the API process,
+      # job scans run in GitHub Actions (.github/workflows/scan.yml).
+      - key: TASK_MODE
+        value: inline
+      - key: SERVICE_ROLE
+        value: api
+      - key: RUN_MIGRATIONS
+        value: "1"
+      - key: APP_ENV
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: CORS_ORIGINS
+        value: https://jobscan-web.vercel.app
+      - key: APP_PUBLIC_URL
+        value: https://jobscan-web.vercel.app
+      - key: SCANNER_ENABLED
+        value: "true"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      # Secrets — entered in the Render dashboard, never committed.
+      - key: DATABASE_URL # Supabase "Session pooler" URI (IPv4)
+        sync: false
+      - key: REDIS_URL # Upstash rediss:// URL
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GOOGLE_OAUTH_CLIENT_ID # optional: Google Sign-In
+        sync: false
+      - key: GITHUB_DISPATCH_TOKEN # optional: makes "Scan jobs" start a scan now
+        sync: false

@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta, timezone
 
+import requests
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select
@@ -11,6 +12,7 @@ from app.db import get_db
 from app.models import Application, Job, User
 from app.services import scan_guard
 from app.services.scan_status import read_scan_telemetry, record_scan_event
+from app.tasks.dispatch import dispatch
 from app.tasks.job_embeddings import embed_pending_jobs
 from app.tasks.job_scanner import HARD_TIME_LIMIT, _parse_csv, scan_jobs
 
@@ -146,6 +148,13 @@ def trigger_scan(current_user: User = Depends(get_current_user)) -> TriggerRespo
     """
     if not settings.scanner_enabled:
         return TriggerResponse(status="disabled", task_id="", message="Job scanning is paused on this server.")
+    inline = settings.task_mode == "inline"
+    if inline and not settings.github_dispatch_token:
+        return TriggerResponse(
+            status="scheduled",
+            task_id="",
+            message="Job scans run automatically every few hours — new jobs will appear after the next one.",
+        )
     if scan_guard.scan_in_progress():
         return TriggerResponse(
             status="already_queued",
@@ -174,11 +183,16 @@ def trigger_scan(current_user: User = Depends(get_current_user)) -> TriggerRespo
     ][: max(1, settings.scanner_max_locations)]
     scan_guard.mark_queued()
     try:
-        async_result = scan_jobs.delay(
-            keywords=roles or None,
-            locations=locs or None,
-        )
-    except Exception as exc:  # noqa: BLE001 — broker down
+        if inline:
+            # No worker here: run the scan on GitHub Actions instead.
+            _dispatch_github_scan(roles, locs)
+            task_id = "github-actions"
+        else:
+            task_id = scan_jobs.delay(
+                keywords=roles or None,
+                locations=locs or None,
+            ).id
+    except Exception as exc:  # noqa: BLE001 — broker / GitHub unreachable
         scan_guard.clear_queued()
         scan_guard.release_manual_trigger(current_user.id)
         raise HTTPException(
@@ -190,12 +204,36 @@ def trigger_scan(current_user: User = Depends(get_current_user)) -> TriggerRespo
     what = ", ".join(roles[:3]) if roles else "default scanner keywords"
     return TriggerResponse(
         status="queued",
-        task_id=async_result.id,
+        task_id=task_id,
         message=(
             f"Scan queued for {current_user.email} "
-            f"({what} · {where}). Wait ~1–2 min, then Find matches."
+            f"({what} · {where}). Wait a few minutes, then Find matches."
         ),
     )
+
+
+def _dispatch_github_scan(roles: list[str], locs: list[str]) -> None:
+    """Start .github/workflows/scan.yml via workflow_dispatch (expects HTTP 204)."""
+    url = (
+        f"https://api.github.com/repos/{settings.github_repo}/actions/workflows/"
+        f"{settings.github_scan_workflow}/dispatches"
+    )
+    resp = requests.post(
+        url,
+        headers={
+            "Authorization": f"Bearer {settings.github_dispatch_token}",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        json={
+            "ref": settings.github_scan_ref,
+            "inputs": {"keywords": ",".join(roles), "locations": ",".join(locs)},
+        },
+        timeout=15,
+    )
+    if resp.status_code != 204:
+        # Never log the token; GitHub's error body doesn't contain it.
+        raise RuntimeError(f"GitHub workflow dispatch failed: HTTP {resp.status_code} {resp.text[:200]}")
 
 
 class EmbedJobsRequest(BaseModel):
@@ -209,9 +247,9 @@ def trigger_embed_jobs(
 ) -> TriggerResponse:
     """Manually enqueue embedding for jobs missing vectors (Stage 1)."""
     batch = body.batch_size if body else None
-    async_result = embed_pending_jobs.delay(batch)
+    async_result = dispatch(embed_pending_jobs, batch)
     return TriggerResponse(
         status="queued",
-        task_id=async_result.id,
+        task_id=str(getattr(async_result, "id", "inline")),
         message=f"Job embedding batch queued for {current_user.email}.",
     )

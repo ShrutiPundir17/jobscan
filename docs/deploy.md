@@ -1,5 +1,8 @@
 # Deploy JobAgent for real testers (VPS + Docker)
 
+> **Free option:** Vercel + Render + Supabase + Upstash + GitHub Actions —
+> see [deploy-free.md](./deploy-free.md). This page covers a self-managed VPS.
+
 Localhost only works on your machine. For friends/testers you need a **public HTTPS URL**.
 
 This guide uses a small VPS + Docker Compose + Caddy (same stack as local: Postgres/pgvector, Redis, API, Celery, static web).
