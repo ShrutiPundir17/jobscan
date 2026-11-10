@@ -42,3 +42,20 @@ services:
         sync: false
       - key: GITHUB_DISPATCH_TOKEN # optional: makes "Scan jobs" start a scan now
         sync: false
+      # Optional notifications (docs/phase-5.md): email via Resend, WhatsApp via Twilio.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: SMTP_FROM_EMAIL
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_FROM
+        sync: false
+      - key: TWILIO_TEMPLATE_MATCHES_SID
+        sync: false
+      - key: TWILIO_TEMPLATE_PASSWORD_RESET_SID
+        sync: false
+      - key: TWILIO_TEMPLATE_LOGIN_EMAIL_SID
+        sync: false

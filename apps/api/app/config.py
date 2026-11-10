@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     twilio_account_sid: str | None = None
     twilio_auth_token: str | None = None
     twilio_whatsapp_from: str | None = None  # e.g. whatsapp:+14155238886
+    # Approved WhatsApp Content Template SIDs (HX…) for production senders.
+    # Empty = free-form text (Twilio sandbox / inside the 24h reply window).
+    twilio_template_matches_sid: str = ""
+    twilio_template_password_reset_sid: str = ""
+    twilio_template_login_email_sid: str = ""
 
     app_public_url: str = "http://localhost:5173"
 
