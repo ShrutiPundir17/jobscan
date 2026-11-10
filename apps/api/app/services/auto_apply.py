@@ -208,9 +208,10 @@ def _require_platform_enabled() -> None:
 
 def _enqueue(task_name: str, app_id: UUID, attempt: str) -> None:
     from app.tasks import auto_apply as tasks
+    from app.tasks.dispatch import dispatch
 
     try:
-        getattr(tasks, task_name).delay(str(app_id), attempt)
+        dispatch(getattr(tasks, task_name), str(app_id), attempt)
     except Exception as exc:  # noqa: BLE001 — broker down
         logger.exception("auto_apply enqueue failed task=%s app=%s", task_name, app_id)
         raise EnqueueError(str(exc)) from exc

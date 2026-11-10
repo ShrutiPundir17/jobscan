@@ -319,16 +319,17 @@ async def _run_scan(
     return summary
 
 
-@celery.task(
-    name="app.tasks.job_scanner.scan_jobs",
-    soft_time_limit=SOFT_TIME_LIMIT,
-    time_limit=HARD_TIME_LIMIT,
-)
-def scan_jobs(
+def run_scan_job(
     keywords: list[str] | None = None,
     locations: list[str] | None = None,
+    *,
+    after_scan: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
-    """Celery entrypoint — scrape portals (optional per-user keywords/locations)."""
+    """
+    One full scan: single-scan lock, status telemetry, scrape + save, then
+    `after_scan` (job embedding). Shared by the Celery task and the GitHub
+    Actions entrypoint (app.scan_once).
+    """
     from app.services.scan_status import record_scan_event
 
     # Outlives the hard limit so a killed worker can't wedge scanning forever.
@@ -367,12 +368,30 @@ def scan_jobs(
         )
         scan_guard.release_scan_lock(token)
 
-    try:
-        from app.tasks.job_embeddings import embed_pending_jobs
-
-        embed_pending_jobs.delay()
-        result["embed_queued"] = True
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("embed_queue_failed err=%s", exc)
-        result["embed_queued"] = False
+    if after_scan is not None:
+        try:
+            after_scan()
+            result["embed_queued"] = True
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("embed_after_scan_failed err=%s", exc)
+            result["embed_queued"] = False
     return result
+
+
+def _queue_embeddings() -> None:
+    from app.tasks.job_embeddings import embed_pending_jobs
+
+    embed_pending_jobs.delay()
+
+
+@celery.task(
+    name="app.tasks.job_scanner.scan_jobs",
+    soft_time_limit=SOFT_TIME_LIMIT,
+    time_limit=HARD_TIME_LIMIT,
+)
+def scan_jobs(
+    keywords: list[str] | None = None,
+    locations: list[str] | None = None,
+) -> dict[str, Any]:
+    """Celery entrypoint — scrape portals (optional per-user keywords/locations)."""
+    return run_scan_job(keywords, locations, after_scan=_queue_embeddings)
