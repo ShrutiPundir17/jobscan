@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { AgentStatusPanel } from "./AgentStatusPanel";
 import { api } from "./api";
-import type { ApplicationItem, PersistedMatch, UserProfile } from "./types";
+import type { ApplicationItem, ApplicationSummary, PersistedMatch, UserProfile } from "./types";
 
 type Props = {
   onNavigate: (tab: string) => void;
@@ -36,6 +36,7 @@ function useCountUp(target: number, ready: boolean): number {
 export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [matches, setMatches] = useState<PersistedMatch[]>([]);
+  const [summary, setSummary] = useState<ApplicationSummary | null>(null);
   const [apps, setApps] = useState<ApplicationItem[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -43,14 +44,17 @@ export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
     void (async () => {
       setLoading(true);
       try {
-        const [me, m, a] = await Promise.all([
+        // Counts come from the server (lists are paginated); only the top 3 to-review matches are fetched.
+        const [me, m, s, recent] = await Promise.all([
           api.me(),
-          api.listMatches(),
-          api.listApplications(),
+          api.listMatches({ status: "pending_review", limit: 3 }),
+          api.applicationSummary(),
+          api.listApplications({ limit: 5 }),
         ]);
         setProfile(me);
         setMatches(m.items);
-        setApps(a.items);
+        setSummary(s);
+        setApps(recent.items);
       } catch (err) {
         onError(err instanceof Error ? err.message : "Failed to load dashboard");
       } finally {
@@ -59,16 +63,14 @@ export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
     })();
   }, []);
 
-  const pending = apps.filter((a) =>
-    ["applied", "applying", "interviewing"].includes(a.status),
-  ).length;
-  const interviews = apps.filter((a) => a.status === "interviewing").length;
-  const offers = apps.filter((a) => a.status === "offered").length;
-  const top = [...matches]
-    .sort((a, b) => (b.match_score ?? 0) - (a.match_score ?? 0))
-    .slice(0, 3);
+  const toReview = summary?.to_review ?? 0;
+  const pending = summary?.awaiting_response ?? 0;
+  const interviews = summary?.interviewing ?? 0;
+  const offers = summary?.offered ?? 0;
+  const attention = (summary?.auto_apply.awaiting_approval ?? 0) + (summary?.auto_apply.unconfirmed ?? 0);
+  const top = matches; // already the highest-scored matches still to review
 
-  const cMatches = useCountUp(matches.length, !loading);
+  const cMatches = useCountUp(toReview, !loading);
   const cPending = useCountUp(pending, !loading);
   const cInterviews = useCountUp(interviews, !loading);
   const cOffers = useCountUp(offers, !loading);
@@ -96,8 +98,13 @@ export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
         <div className="dash-hero-copy">
           <div className="row space-between" style={{ marginBottom: "0.35rem", flexWrap: "wrap", gap: "0.5rem" }}>
             <h1 style={{ fontSize: "1.5rem" }}>Welcome back, {name}</h1>
-            {matches.length > 0 ? (
-              <span className="live-ticker">{matches.length} new matches found</span>
+            {toReview > 0 ? (
+              <span className="live-ticker">{toReview} new matches to review</span>
+            ) : null}
+            {attention > 0 ? (
+              <button type="button" className="live-ticker" onClick={() => onNavigate("applications")}>
+                {attention} auto-apply {attention === 1 ? "needs" : "need"} your attention
+              </button>
             ) : null}
           </div>
           <p className="muted" style={{ marginBottom: 0 }}>
@@ -118,7 +125,7 @@ export function DashboardHome({ onNavigate, onMessage, onError }: Props) {
           <div className="value" style={{ color: "var(--warning)" }}>
             {cPending}
           </div>
-          <div className="label">Applications pending</div>
+          <div className="label">Awaiting response</div>
         </button>
         <button type="button" className="stat-card" onClick={() => onNavigate("applications")}>
           <div className="value">{cInterviews}</div>

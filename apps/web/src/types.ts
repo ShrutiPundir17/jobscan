@@ -197,3 +197,13 @@ export type PortalHealth = {
   last_error: string | null;
   last_error_kind: string | null;
 };
+
+export type ApplicationSummary = {
+  to_review: number;
+  awaiting_response: number;
+  interviewing: number;
+  offered: number;
+  total: number;
+  by_status: Record<string, number>;
+  auto_apply: { awaiting_approval: number; unconfirmed: number; needs_manual: number };
+};

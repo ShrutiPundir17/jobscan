@@ -34,6 +34,20 @@ def ensure_verdict(app: Application) -> str | None:
     return verdict
 
 
+def match_filters(user: User, *, status_filter: ApplicationStatus | None = None) -> list:
+    """Filters behind the Matches page (scored, in the user's preferred locations)."""
+    filters = [
+        Application.user_id == user.id,
+        Application.match_score.is_not(None),
+    ]
+    if status_filter is not None:
+        filters.append(Application.status == status_filter)
+    loc_clauses = location_preference_clauses(user)
+    if loc_clauses:
+        filters.append(Application.job_id.in_(select(Job.id).where(or_(*loc_clauses))))
+    return filters
+
+
 def list_persisted_matches(
     db: Session,
     user: User,
@@ -43,20 +57,9 @@ def list_persisted_matches(
     limit: int = 20,
     offset: int = 0,
 ) -> tuple[list[Application], int]:
-    filters = [
-        Application.user_id == user.id,
-        Application.match_score.is_not(None),
-    ]
+    filters = match_filters(user, status_filter=status_filter)
     if min_score is not None:
         filters.append(Application.match_score >= int(min_score))
-    if status_filter is not None:
-        filters.append(Application.status == status_filter)
-
-    loc_clauses = location_preference_clauses(user)
-    if loc_clauses:
-        filters.append(
-            Application.job_id.in_(select(Job.id).where(or_(*loc_clauses)))
-        )
 
     total = int(
         db.scalar(select(func.count()).select_from(Application).where(*filters)) or 0

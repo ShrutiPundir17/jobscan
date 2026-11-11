@@ -50,6 +50,30 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
+const PAGE_SIZE = 100; // the API's maximum page size
+
+async function collectPages<T extends { id: string }>(
+  fetchPage: (offset: number) => Promise<{ items: T[]; total: number }>,
+  max: number,
+): Promise<{ items: T[]; total: number }> {
+  const items: T[] = [];
+  const seen = new Set<string>();
+  let total = 0;
+  for (let offset = 0; offset < max; offset += PAGE_SIZE) {
+    const page = await fetchPage(offset);
+    total = page.total;
+    for (const item of page.items) {
+      // Rows can shift between pages if data changes mid-way; never show one twice.
+      if (!seen.has(item.id)) {
+        seen.add(item.id);
+        items.push(item);
+      }
+    }
+    if (page.items.length < PAGE_SIZE || items.length >= total) break;
+  }
+  return { items: items.slice(0, max), total };
+}
+
 export const api = {
   register(email: string, password: string, fullName?: string) {
     return request<{
@@ -227,14 +251,28 @@ export const api = {
   getJob(id: string) {
     return request<import("./types").JobDetail>(`/jobs/${id}`);
   },
-  listMatches(minScore?: number) {
-    const q = minScore != null ? `?min_score=${minScore}` : "";
+  listMatches(opts: { minScore?: number; status?: string; limit?: number; offset?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (opts.minScore != null) qs.set("min_score", String(opts.minScore));
+    if (opts.status) qs.set("status", opts.status);
+    qs.set("limit", String(opts.limit ?? 20));
+    qs.set("offset", String(opts.offset ?? 0));
     return request<{
       items: import("./types").PersistedMatch[];
       total: number;
       limit: number;
       offset: number;
-    }>(`/matches${q}`);
+    }>(`/matches?${qs.toString()}`);
+  },
+  /** Every match (pages of 100), up to `max`. Lists are paginated server-side. */
+  async listAllMatches(max = 500) {
+    return collectPages((offset) => api.listMatches({ limit: PAGE_SIZE, offset }), max);
+  },
+  getMatch(id: string) {
+    return request<import("./types").PersistedMatch>(`/matches/${id}`);
+  },
+  applicationSummary() {
+    return request<import("./types").ApplicationSummary>("/applications/summary");
   },
   scoreMatches(body: {
     limit?: number;
@@ -273,12 +311,19 @@ export const api = {
       job: import("./types").MatchJob;
     }>(`/matches/${applicationId}/tailor`, { method: "POST" });
   },
-  listApplications(status?: string) {
-    const q = status ? `?status=${encodeURIComponent(status)}` : "";
+  listApplications(opts: { status?: string; limit?: number; offset?: number } = {}) {
+    const qs = new URLSearchParams();
+    if (opts.status) qs.set("status", opts.status);
+    qs.set("limit", String(opts.limit ?? 20));
+    qs.set("offset", String(opts.offset ?? 0));
     return request<{
       items: import("./types").ApplicationItem[];
       total: number;
-    }>(`/applications${q}`);
+    }>(`/applications?${qs.toString()}`);
+  },
+  /** Every application (pages of 100), up to `max` — the board must not hide older ones. */
+  async listAllApplications(max = 1000) {
+    return collectPages((offset) => api.listApplications({ limit: PAGE_SIZE, offset }), max);
   },
   applyToJob(applicationId: string) {
     return request<{

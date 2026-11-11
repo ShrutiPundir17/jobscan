@@ -32,7 +32,7 @@ export function ResumePage({ onMessage, onError }: Props) {
   async function load() {
     setLoading(true);
     try {
-      const [r, m] = await Promise.all([api.listResumes(), api.listMatches()]);
+      const [r, m] = await Promise.all([api.listResumes(), api.listAllMatches()]);
       setResumes(r.items);
       const withTailor = m.items.filter((x) => x.tailored_resume_text);
       setTailored(withTailor);
