@@ -28,17 +28,20 @@ def health() -> JSONResponse:
         check_database()
         status["postgres"] = "ok"
     except Exception as exc:  # noqa: BLE001 — surface infra errors in health
-        status["postgres"] = f"error: {exc}"
+        status["postgres"] = f"error: {type(exc).__name__}"
         http_status = 503
 
     try:
-        client = Redis.from_url(settings.redis_url)
+        client = Redis.from_url(settings.redis_url, socket_connect_timeout=3, socket_timeout=3)
         if client.ping():
             status["redis"] = "ok"
         client.close()
     except Exception as exc:  # noqa: BLE001
-        status["redis"] = f"error: {exc}"
-        http_status = 503
+        status["redis"] = f"error: {type(exc).__name__}"
+        # Without a Celery worker Redis only holds scan bookkeeping (and every
+        # guard fails open), so a Redis hiccup must not take the API offline.
+        if settings.task_mode != "inline":
+            http_status = 503
 
     return JSONResponse(content=status, status_code=http_status)
 
