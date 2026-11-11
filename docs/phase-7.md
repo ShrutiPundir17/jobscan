@@ -28,11 +28,7 @@ Quick demo tunnel (laptop must stay on) is documented there as a fallback only.
 
 ### WhatsApp beyond sandbox
 Sandbox needs the user to join and stay inside the **24h session window** (Twilio error **63016** when outside).
-
-For production:
-1. Twilio WhatsApp Business / approved sender
-2. Message **templates** for outbound outside the session window
-3. Keep `notify_whatsapp_enabled` + verified `phone` on the user profile
+Production template support is built in — setup and the template texts to submit: [phase-5.md](./phase-5.md#whatsapp-in-production-templates).
 
 Email alerts already work with SMTP once configured.
 

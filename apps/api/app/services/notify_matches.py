@@ -82,6 +82,17 @@ def create_match_notification(
     return note
 
 
+def _whatsapp_template_args(note: Notification) -> dict[str, Any]:
+    """Template kind + variables for notification types that have a WhatsApp template."""
+    if note.type == MATCHES_FOUND and isinstance(note.payload, dict):
+        return {
+            "kind": "matches_found",
+            # {{1}} match count, {{2}} top score, {{3}} dashboard link
+            "variables": [note.payload.get("count"), note.payload.get("top_score"), settings.app_public_url],
+        }
+    return {}
+
+
 def deliver_notification(db: Session, notification_id: UUID) -> dict[str, str]:
     """Send email + WhatsApp for an existing notification row."""
     note = db.scalar(
@@ -110,7 +121,11 @@ def deliver_notification(db: Session, notification_id: UUID) -> dict[str, str]:
 
     if user.notify_whatsapp_enabled:
         if user.phone:
-            whatsapp_status = send_whatsapp(to_phone=user.phone, body=note.body)
+            whatsapp_status = send_whatsapp(
+                to_phone=user.phone,
+                body=note.body,
+                **_whatsapp_template_args(note),
+            )
         else:
             whatsapp_status = "skipped:no_phone"
     else:

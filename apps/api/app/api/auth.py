@@ -90,12 +90,18 @@ def _try_send_email(*, to_email: str, subject: str, text_body: str, html_body: s
     )
 
 
-def _try_send_whatsapp(*, phone: str | None, body: str) -> str:
+def _try_send_whatsapp(
+    *,
+    phone: str | None,
+    body: str,
+    kind: str | None = None,
+    variables: list[object] | None = None,
+) -> str:
     if not phone or not settings.whatsapp_configured():
         return "skipped"
     from app.services.notify_whatsapp import send_whatsapp
 
-    return send_whatsapp(to_phone=phone, body=body)
+    return send_whatsapp(to_phone=phone, body=body, kind=kind, variables=variables)
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -186,7 +192,9 @@ def forgot_password(
             message="If an account exists for that email, we sent password reset instructions."
         )
 
-    wa_status = _try_send_whatsapp(phone=user.phone, body=wa_body)
+    wa_status = _try_send_whatsapp(
+        phone=user.phone, body=wa_body, kind="password_reset", variables=[reset_url]
+    )
     if wa_status == "sent":
         return ForgotPasswordResponse(
             message=(
@@ -295,7 +303,9 @@ def forgot_username(
     )
 
     # Prefer WhatsApp for username recovery (user already proved phone ownership).
-    wa_status = _try_send_whatsapp(phone=user.phone, body=wa_body)
+    wa_status = _try_send_whatsapp(
+        phone=user.phone, body=wa_body, kind="login_email", variables=[user.email]
+    )
     if wa_status == "sent":
         return ForgotUsernameResponse(
             message="If an account matches that phone number, we sent your login email."
