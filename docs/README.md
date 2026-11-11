@@ -9,4 +9,6 @@ Architecture decisions, API notes, and phase write-ups live here.
 - [Phase 5 — Match notifications (Email + WhatsApp)](./phase-5.md)
 - [Phase 6 — Resume tailoring (per job JD)](./phase-6.md)
 - [Phase 7 — Matches/Applications UI, apply tracking, deploy notes](./phase-7.md)
-- [Deploy — public HTTPS for real testers (VPS + Caddy)](./deploy.md)
+- [Phase 8 — Auto-apply agent (ATS forms, human approval)](./phase-8.md)
+- [Deploy (free) — Vercel + Render + Supabase + Upstash + GitHub Actions](./deploy-free.md)
+- [Deploy (VPS) — Docker Compose + Caddy HTTPS](./deploy.md)
