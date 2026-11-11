@@ -4,6 +4,8 @@ import { isAutoApplyBusy } from "./autoApply";
 import { MatchCard, MatchCardLoading } from "./components/MatchCard";
 import type { PersistedMatch } from "./types";
 
+const PAGE = 20;
+
 type Props = {
   onMessage: (msg: string | null) => void;
   onError: (msg: string | null) => void;
@@ -19,13 +21,16 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState<(typeof FILTERS)[number]>("All");
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   async function load() {
     setLoading(true);
     onError(null);
     try {
-      const res = await api.listMatches();
+      const res = await api.listMatches({ limit: PAGE });
       setItems(res.items);
+      setTotal(res.total);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Failed to load matches");
     } finally {
@@ -37,20 +42,35 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     void load();
   }, []);
 
-  // While the agent is filling/submitting a form, refresh quietly until it settles.
-  const agentWorking = items.some((m) => isAutoApplyBusy(m.auto_apply_state));
+  async function loadMore() {
+    setLoadingMore(true);
+    try {
+      const res = await api.listMatches({ limit: PAGE, offset: items.length });
+      setItems((prev) => {
+        const seen = new Set(prev.map((m) => m.id));
+        return [...prev, ...res.items.filter((m) => !seen.has(m.id))];
+      });
+      setTotal(res.total);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not load more matches");
+    } finally {
+      setLoadingMore(false);
+    }
+  }
+
+  // While the agent is filling/submitting a form, refresh just those matches
+  // (re-fetching page 1 would drop any pages loaded with "Load more").
+  const busyIds = items.filter((m) => isAutoApplyBusy(m.auto_apply_state)).map((m) => m.id).join(",");
   useEffect(() => {
-    if (!agentWorking) return;
+    if (!busyIds) return;
     const timer = window.setInterval(() => {
-      api
-        .listMatches()
-        .then((res) => setItems(res.items))
-        .catch(() => {
-          /* keep last state; next tick retries */
-        });
+      void Promise.all(busyIds.split(",").map((id) => api.getMatch(id).catch(() => null))).then((fresh) => {
+        const byId = new Map(fresh.filter((m): m is PersistedMatch => m !== null).map((m) => [m.id, m]));
+        setItems((prev) => prev.map((m) => byId.get(m.id) ?? m));
+      });
     }, 5000);
     return () => window.clearInterval(timer);
-  }, [agentWorking]);
+  }, [busyIds]);
 
   const filtered = useMemo(() => {
     return items.filter((m) => {
@@ -178,7 +198,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
         <div>
           <h1 style={{ fontSize: "1.35rem" }}>Matches</h1>
           <p className="muted" style={{ fontSize: "0.875rem" }}>
-            {visible.length} ranked for you
+            {total > items.length ? `${total} ranked for you (showing ${visible.length})` : `${visible.length} ranked for you`}
           </p>
         </div>
         <div className="row" style={{ flexWrap: "wrap" }}>
@@ -268,6 +288,13 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
           ))}
         </div>
       )}
+      {!loading && items.length < total ? (
+        <div style={{ textAlign: "center", marginTop: "1rem" }}>
+          <button type="button" className="btn btn-secondary" disabled={loadingMore} onClick={() => void loadMore()}>
+            {loadingMore ? "Loading…" : `Load more (${total - items.length} left)`}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

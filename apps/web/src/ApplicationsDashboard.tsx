@@ -33,7 +33,7 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
     setLoading(true);
     onError(null);
     try {
-      const res = await api.listApplications();
+      const res = await api.listAllApplications();
       setItems(res.items);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Failed to load applications");
@@ -118,7 +118,7 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
       onMessage(`Moved to ${status}.`);
       await load();
       if (selected?.id === id) {
-        const updated = (await api.listApplications()).items.find((x) => x.id === id);
+        const updated = await api.getApplication(id);
         setSelected(updated ?? null);
       }
     } catch (err) {
