@@ -99,9 +99,7 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     try {
       // The scan queues job embedding itself when it finishes.
       const scan = await api.triggerScan();
-      onMessage(
-        scan.status === "queued" ? `${scan.message} Wait a few minutes, then Find matches.` : scan.message,
-      );
+      onMessage(scan.message);
     } catch (err) {
       onError(err instanceof Error ? err.message : "Scan failed");
     } finally {

@@ -314,9 +314,10 @@ def deep_score_matches(
     persisted_ids = [str(r.application_id) for r in results if r.persisted and r.application_id]
     if persist and persisted_ids:
         try:
+            from app.tasks.dispatch import dispatch
             from app.tasks.notify_matches import notify_matches_found
 
-            notify_matches_found.delay(str(user.id), persisted_ids)
+            dispatch(notify_matches_found, str(user.id), persisted_ids)
         except Exception:  # noqa: BLE001
             logger.exception(
                 "failed to queue match notifications user=%s count=%s",

@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -80,6 +81,34 @@ class Settings(BaseSettings):
     auto_apply_browser_channel: str = ""
     # Fetch the job page (e.g. LinkedIn guest view) to find an external ATS link.
     auto_apply_resolve_via_fetch: bool = True
+
+    # Background work: "worker" = Celery worker consumes the Redis queue (Docker, paid hosts).
+    # "inline" = no worker (e.g. Render free): tasks run one at a time in a background
+    # thread of the API process, and job scans run in GitHub Actions instead.
+    task_mode: str = "worker"
+    # Optional: lets "Scan jobs" trigger the GitHub Actions scan in inline mode.
+    # Fine-grained token with "Actions: read and write" on this repository only.
+    github_dispatch_token: str = ""
+    github_repo: str = "ShrutiPundir17/jobscan"
+    github_scan_workflow: str = "scan.yml"
+    github_scan_ref: str = "main"
+
+    @field_validator("database_url")
+    @classmethod
+    def normalize_database_url(cls, value: str) -> str:
+        # Supabase / Render / Railway hand out postgres:// URLs; SQLAlchemy needs the driver.
+        for prefix in ("postgresql://", "postgres://"):
+            if value.startswith(prefix):
+                return "postgresql+psycopg://" + value[len(prefix):]
+        return value
+
+    @field_validator("task_mode")
+    @classmethod
+    def validate_task_mode(cls, value: str) -> str:
+        mode = (value or "worker").strip().lower()
+        if mode not in {"worker", "inline"}:
+            raise ValueError("TASK_MODE must be 'worker' or 'inline'")
+        return mode
 
     def cors_origin_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
