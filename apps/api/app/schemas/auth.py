@@ -6,10 +6,22 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 from app.services.email_validation import InvalidEmailError, normalize_and_validate_email
 
 
+def _fits_bcrypt(value: str) -> str:
+    # bcrypt ignores everything after 72 bytes; refuse instead of silently truncating.
+    if len(value.encode("utf-8")) > 72:
+        raise ValueError("Password is too long (max 72 bytes — about 72 plain characters)")
+    return value
+
+
 class UserRegister(BaseModel):
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
     full_name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("password")
+    @classmethod
+    def password_fits_bcrypt(cls, value: str) -> str:
+        return _fits_bcrypt(value)
 
     @field_validator("email")
     @classmethod
@@ -58,6 +70,11 @@ class ForgotPasswordResponse(BaseModel):
 class ResetPasswordRequest(BaseModel):
     token: str = Field(min_length=20, max_length=200)
     new_password: str = Field(min_length=8, max_length=128)
+
+    @field_validator("new_password")
+    @classmethod
+    def new_password_fits_bcrypt(cls, value: str) -> str:
+        return _fits_bcrypt(value)
 
 
 class ForgotUsernameRequest(BaseModel):

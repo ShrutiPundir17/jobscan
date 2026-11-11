@@ -71,18 +71,41 @@ def test_migration_normalizes_existing_data(db):
     cfg = Config(str(API_ROOT / "alembic.ini"))
     cfg.set_main_option("script_location", str(API_ROOT / "alembic"))
     command.downgrade(cfg, "0010_auto_apply")
+    # Plain SQL in the 0010 schema: today's ORM models have columns that later
+    # migrations add, so they can't insert into the old shape.
+    old = datetime.now(UTC) - timedelta(days=2)
+    vec = "[" + ",".join(["0.01"] * settings.embedding_dimensions) + "]"
     try:
-        two = make_user(db, email="two@jobagent.dev")
-        old = datetime.now(UTC) - timedelta(days=2)
-        make_resume(db, two, "old.pdf", primary=True)
-        db.execute(text("UPDATE resumes SET updated_at = :t WHERE filename = 'old.pdf'"), {"t": old})
-        make_resume(db, two, "new.pdf", primary=True)
-        none = make_user(db, email="none@jobagent.dev")
-        make_resume(db, none, "unembedded-newer.pdf", embedded=False)
-        make_resume(db, none, "embedded-older.pdf", created=old)
+        ids = {}
+        for email in ("two@jobagent.dev", "none@jobagent.dev"):
+            ids[email] = db.execute(
+                text(
+                    "INSERT INTO users (id, email, hashed_password, auto_apply_enabled, min_match_score, "
+                    "notify_email_enabled, notify_whatsapp_enabled) "
+                    "VALUES (gen_random_uuid(), :e, 'x', false, 70, true, false) RETURNING id"
+                ),
+                {"e": email},
+            ).scalar_one()
+        rows = [
+            ("two@jobagent.dev", "old.pdf", True, True, old, old),
+            ("two@jobagent.dev", "new.pdf", True, True, datetime.now(UTC), datetime.now(UTC)),
+            ("none@jobagent.dev", "unembedded-newer.pdf", False, False, datetime.now(UTC), datetime.now(UTC)),
+            ("none@jobagent.dev", "embedded-older.pdf", False, True, old, old),
+        ]
+        for email, name, primary, embedded, created, updated in rows:
+            db.execute(
+                text(
+                    "INSERT INTO resumes (id, user_id, filename, is_primary, embedding, embedded_at, created_at, updated_at) "
+                    "VALUES (gen_random_uuid(), :u, :n, :p, CAST(:v AS vector), :ea, :c, :up)"
+                ),
+                {"u": ids[email], "n": name, "p": primary, "v": vec if embedded else None,
+                 "ea": updated if embedded else None, "c": created, "up": updated},
+            )
         db.commit()
     finally:
         command.upgrade(cfg, "head")
+    two = db.get(User, ids["two@jobagent.dev"])
+    none = db.get(User, ids["none@jobagent.dev"])
     assert primaries(db, two) == ["new.pdf"]
     assert primaries(db, none) == ["embedded-older.pdf"]
 
