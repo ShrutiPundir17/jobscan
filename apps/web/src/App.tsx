@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, clearToken, getToken } from "./api";
+import { api, clearToken, getToken, SIGNED_OUT_EVENT } from "./api";
 import { ApplicationsDashboard } from "./ApplicationsDashboard";
 import { DashboardHome } from "./DashboardHome";
 import { LandingPage } from "./LandingPage";
@@ -81,6 +81,17 @@ export default function App() {
       }
     })();
   }, [gate]);
+
+  // Any request that comes back 401 (expired or revoked session) signs the user out.
+  useEffect(() => {
+    const onSignedOut = () => {
+      setProfile(null);
+      setGate((g) => (g === "app" || g === "boot" || g === "onboarding" ? "login" : g));
+      setTab("dashboard");
+    };
+    window.addEventListener(SIGNED_OUT_EVENT, onSignedOut);
+    return () => window.removeEventListener(SIGNED_OUT_EVENT, onSignedOut);
+  }, []);
 
   function logout() {
     clearToken();

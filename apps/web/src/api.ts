@@ -1,5 +1,6 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
 const TOKEN_KEY = "jobagent_token";
+export const SIGNED_OUT_EVENT = "jobagent:signed-out";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
@@ -29,6 +30,11 @@ async function request<T>(
   }
 
   const res = await fetch(`${API_URL}${path}`, { ...options, headers });
+  if (res.status === 401 && auth) {
+    // Token expired or revoked (password reset / "log out everywhere"): go back to sign-in.
+    clearToken();
+    window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+  }
   if (!res.ok) {
     let detail = `Request failed (${res.status})`;
     try {
@@ -120,6 +126,9 @@ export const api = {
       { method: "POST", body: JSON.stringify({ phone }) },
       false,
     );
+  },
+  logoutAll() {
+    return request<{ message: string }>("/auth/logout-all", { method: "POST" });
   },
   me() {
     return request<import("./types").UserProfile>("/users/me");

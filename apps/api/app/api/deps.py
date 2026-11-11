@@ -36,4 +36,12 @@ def get_current_user(
     user = db.scalar(select(User).where(User.id == user_id))
     if user is None:
         raise credentials_exception
+    # Tokens from before a password reset / "log out everywhere" are revoked.
+    # (Tokens issued before this check existed have no "sv" and count as 0.)
+    if int(payload.get("sv", 0) or 0) != int(user.session_version or 0):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Your session has ended. Please sign in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     return user
