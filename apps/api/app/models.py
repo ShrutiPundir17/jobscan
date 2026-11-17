@@ -82,6 +82,9 @@ class User(Base, TimestampMixin):
         Boolean, default=False, nullable=False
     )
     linkedin_url: Mapped[str | None] = mapped_column(String(512))
+    # Carried in login tokens; bumping it (password reset, "log out everywhere")
+    # revokes every token issued before.
+    session_version: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
 
     resumes: Mapped[list["Resume"]] = relationship(back_populates="user", cascade="all, delete-orphan")
     applications: Mapped[list["Application"]] = relationship(
