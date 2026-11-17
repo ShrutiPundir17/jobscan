@@ -13,6 +13,7 @@ from app.db import get_db
 from app.models import Application, ApplicationStatus, User
 from app.schemas.matches import MatchJobSummary
 from app.services import auto_apply
+from app.services.match_persist import match_filters
 
 router = APIRouter(prefix="/applications", tags=["applications"])
 
@@ -145,6 +146,77 @@ def list_applications(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+class AutoApplyAttention(BaseModel):
+    awaiting_approval: int = 0
+    unconfirmed: int = 0
+    needs_manual: int = 0
+
+
+class ApplicationSummary(BaseModel):
+    to_review: int = Field(description="Scored matches still to review (same filter as the Matches page)")
+    awaiting_response: int = Field(description="Applied, waiting to hear back")
+    interviewing: int
+    offered: int
+    total: int
+    by_status: dict[str, int]
+    auto_apply: AutoApplyAttention
+
+
+@router.get("/summary", response_model=ApplicationSummary)
+def application_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationSummary:
+    """Exact dashboard counts computed in the database (lists are paginated)."""
+    by_status = {
+        s.value: int(n)
+        for s, n in db.execute(
+            select(Application.status, func.count())
+            .where(Application.user_id == current_user.id)
+            .group_by(Application.status)
+        ).all()
+    }
+    to_review = int(
+        db.scalar(
+            select(func.count())
+            .select_from(Application)
+            .where(
+                *match_filters(current_user),
+                Application.status.in_(
+                    [ApplicationStatus.pending_review, ApplicationStatus.matched, ApplicationStatus.discovered]
+                ),
+            )
+        )
+        or 0
+    )
+    states = {
+        state: int(n)
+        for state, n in db.execute(
+            select(Application.auto_apply_state, func.count())
+            .where(
+                Application.user_id == current_user.id,
+                Application.auto_apply_state.in_(
+                    [auto_apply.AWAITING_APPROVAL, auto_apply.UNCONFIRMED, auto_apply.NEEDS_MANUAL]
+                ),
+            )
+            .group_by(Application.auto_apply_state)
+        ).all()
+    }
+    return ApplicationSummary(
+        to_review=to_review,
+        awaiting_response=by_status.get("applied", 0) + by_status.get("applying", 0),
+        interviewing=by_status.get("interviewing", 0),
+        offered=by_status.get("offered", 0),
+        total=sum(by_status.values()),
+        by_status=by_status,
+        auto_apply=AutoApplyAttention(
+            awaiting_approval=states.get(auto_apply.AWAITING_APPROVAL, 0),
+            unconfirmed=states.get(auto_apply.UNCONFIRMED, 0),
+            needs_manual=states.get(auto_apply.NEEDS_MANUAL, 0),
+        ),
     )
 
 
