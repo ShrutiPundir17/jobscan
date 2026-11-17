@@ -80,13 +80,16 @@ def test_inline_returns_immediately_runs_serially_and_survives_failures(inline):
     running = []
     overlap = []
     lock = threading.Lock()
+    release = threading.Event()
 
     def slow(i):
         with lock:
             running.append(i)
             if len(running) > 1:
                 overlap.append(i)
-        time.sleep(0.2)
+        if i == 0:
+            release.wait(10)  # the first task holds until the test lets it go
+        time.sleep(0.05)
         with lock:
             running.remove(i)
         return i
@@ -94,11 +97,13 @@ def test_inline_returns_immediately_runs_serially_and_survives_failures(inline):
     def boom():
         raise RuntimeError("task failed")
 
-    t0 = time.monotonic()
     futures = [dispatch_mod.dispatch(slow, i) for i in range(3)]
     failing = dispatch_mod.dispatch(boom)
-    assert time.monotonic() - t0 < 0.1  # the request is not blocked
-    assert [f.result(timeout=5) for f in futures] == [0, 1, 2]
+    # dispatch() returned while the first task is still blocked, so the request
+    # never waits for task work (no wall-clock threshold: stable on slow CI).
+    assert not futures[0].done()
+    release.set()
+    assert [f.result(timeout=10) for f in futures] == [0, 1, 2]
     assert failing.result(timeout=5) is None  # logged, not raised into the pool
     assert overlap == []  # one at a time: Chromium never runs twice on 512 MB
 

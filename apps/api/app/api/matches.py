@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
@@ -23,7 +24,7 @@ from app.services.match_persist import (
     list_persisted_matches,
     serialize_skill_gaps,
 )
-from app.services.auto_apply import effective_error, effective_state
+from app.services.auto_apply import effective_error, effective_state, guard_manual_change
 from app.services.match_score import deep_score_matches
 from app.services.match_search import resolve_resume_for_match, search_similar_jobs
 from app.services.resume_tailor import tailor_application_resume
@@ -196,4 +197,36 @@ def get_match(
 ) -> PersistedMatchResponse:
     """Get one persisted match: score, verdict, gaps, pitch, tailored resume."""
     app = get_persisted_match(db, current_user, application_id)
+    return _to_persisted_response(app)
+
+
+@router.post("/{application_id}/dismiss", response_model=PersistedMatchResponse)
+def dismiss_match(
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PersistedMatchResponse:
+    """Mark a match "not interested": hidden everywhere and never re-surfaced by re-scoring."""
+    app = get_persisted_match(db, current_user, application_id)
+    # Blocks during an in-flight submission; retires any pending auto-apply plan.
+    guard_manual_change(db, app)
+    if app.dismissed_at is None:
+        app.dismissed_at = datetime.now(UTC)
+        db.commit()
+        db.refresh(app)
+    return _to_persisted_response(app)
+
+
+@router.post("/{application_id}/restore", response_model=PersistedMatchResponse)
+def restore_match(
+    application_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> PersistedMatchResponse:
+    """Undo a dismissal."""
+    app = get_persisted_match(db, current_user, application_id)
+    if app.dismissed_at is not None:
+        app.dismissed_at = None
+        db.commit()
+        db.refresh(app)
     return _to_persisted_response(app)

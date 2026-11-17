@@ -161,6 +161,8 @@ export type ApplicationItem = {
   match_pitch: string | null;
   tailored_resume_text: string | null;
   notes: string | null;
+  follow_up_at: string | null;
+  follow_up_notified_at: string | null;
   applied_at: string | null;
   resume_id: string | null;
   auto_apply_state: AutoApplyState | null;

@@ -56,6 +56,28 @@ export default function App() {
   const [jobsQuerySeq, setJobsQuerySeq] = useState(0);
   const [unread, setUnread] = useState(0);
 
+  // Keep the bell's unread count fresh (it used to update only when the drawer
+  // was opened). Fetching notifications also fires any due follow-up reminders.
+  useEffect(() => {
+    if (gate !== "app") return;
+    let cancelled = false;
+    const refresh = () =>
+      api
+        .listNotifications(true)
+        .then((res) => {
+          if (!cancelled) setUnread(res.unread_count);
+        })
+        .catch(() => {
+          /* offline / signed out: next tick retries */
+        });
+    void refresh();
+    const timer = window.setInterval(refresh, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [gate]);
+
   useEffect(() => {
     if (gate !== "boot") return;
     void (async () => {

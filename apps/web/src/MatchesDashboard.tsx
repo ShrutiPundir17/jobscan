@@ -42,6 +42,37 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
     void load();
   }, []);
 
+  // Dismissal is saved on the server (hidden from matches, counts and re-scoring);
+  // this session keeps an "Undo" row until the page reloads.
+  async function dismiss(id: string) {
+    setDismissed((s) => new Set(s).add(id));
+    try {
+      await api.dismissMatch(id);
+      setTotal((t) => Math.max(0, t - 1));
+    } catch (err) {
+      setDismissed((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+      onError(err instanceof Error ? err.message : "Could not dismiss match");
+    }
+  }
+
+  async function undoDismiss(id: string) {
+    try {
+      await api.restoreMatch(id);
+      setDismissed((s) => {
+        const n = new Set(s);
+        n.delete(id);
+        return n;
+      });
+      setTotal((t) => t + 1);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not restore match");
+    }
+  }
+
   async function loadMore() {
     setLoadingMore(true);
     try {
@@ -273,14 +304,8 @@ export function MatchesDashboard({ onMessage, onError }: Props) {
               match={m}
               busy={busyId === m.id}
               dismissed={dismissed.has(m.id)}
-              onDismiss={() => setDismissed((s) => new Set(s).add(m.id))}
-              onUndo={() =>
-                setDismissed((s) => {
-                  const n = new Set(s);
-                  n.delete(m.id);
-                  return n;
-                })
-              }
+              onDismiss={() => void dismiss(m.id)}
+              onUndo={() => void undoDismiss(m.id)}
               onApply={() => void apply(m.id, m.job.url)}
               onAutoApply={() => void autoApply(m.id)}
               onTailor={() => tailor(m.id)}

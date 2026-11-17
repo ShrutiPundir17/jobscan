@@ -33,6 +33,10 @@ celery.conf.update(
             "task": "app.tasks.job_embeddings.embed_pending_jobs",
             "schedule": crontab(minute="*/30"),
         },
+        "follow-up-reminders-every-10-min": {
+            "task": "app.tasks.notify_matches.fire_due_reminders",
+            "schedule": crontab(minute="*/10"),
+        },
         "health-ping-every-hour": {
             "task": "app.tasks.health.ping",
             "schedule": crontab(minute=0),
