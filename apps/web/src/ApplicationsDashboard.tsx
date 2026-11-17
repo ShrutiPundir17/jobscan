@@ -22,11 +22,20 @@ const COLUMNS: { key: string; label: string; statuses: string[] }[] = [
   { key: "rejected", label: "Rejected", statuses: ["rejected", "withdrawn", "failed"] },
 ];
 
+/** ISO timestamp -> value for <input type="datetime-local"> in the user's local time. */
+function toLocalInput(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function ApplicationsDashboard({ onMessage, onError }: Props) {
   const [items, setItems] = useState<ApplicationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<ApplicationItem | null>(null);
   const [notes, setNotes] = useState("");
+  const [followUp, setFollowUp] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
   async function load() {
@@ -128,6 +137,21 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
     }
   }
 
+  async function saveFollowUp(value: string | null) {
+    if (!selected) return;
+    setBusyId(selected.id);
+    try {
+      const updated = await api.updateApplication(selected.id, { follow_up_at: value });
+      replaceItem(updated);
+      setFollowUp(toLocalInput(updated.follow_up_at));
+      onMessage(value ? "Reminder set." : "Reminder cleared.");
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Could not save reminder");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function saveNotes() {
     if (!selected) return;
     setBusyId(selected.id);
@@ -192,6 +216,7 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                   onClick={() => {
                     setSelected(a);
                     setNotes(a.notes ?? "");
+                    setFollowUp(toLocalInput(a.follow_up_at));
                   }}
                 >
                   <strong style={{ fontSize: "0.85rem" }}>{a.job.company}</strong>
@@ -204,6 +229,14 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
                       : new Date(a.created_at).toLocaleDateString()}
                   </div>
                   <span className="method-pill">{methodLabel(a)}</span>
+                  {a.follow_up_at && !a.follow_up_notified_at ? (
+                    <span
+                      className={`aa-pill ${new Date(a.follow_up_at).getTime() <= Date.now() ? "warn" : "muted"}`}
+                      title="Follow-up reminder"
+                    >
+                      ⏰ {new Date(a.follow_up_at).toLocaleDateString(undefined, { day: "numeric", month: "short" })}
+                    </span>
+                  ) : null}
                   {autoApplyBadge(a.auto_apply_state) && a.auto_apply_state !== "submitted" ? (
                     <span className={`aa-pill ${autoApplyBadge(a.auto_apply_state)?.tone ?? ""}`}>
                       {autoApplyBadge(a.auto_apply_state)?.label}
@@ -276,10 +309,39 @@ export function ApplicationsDashboard({ onMessage, onError }: Props) {
               </button>
               <label className="field">
                 Follow-up reminder
-                <input type="datetime-local" />
+                <input
+                  type="datetime-local"
+                  value={followUp}
+                  min={toLocalInput(new Date().toISOString())}
+                  onChange={(e) => setFollowUp(e.target.value)}
+                />
               </label>
+              <div className="chip-row">
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  disabled={busyId === selected.id || !followUp}
+                  onClick={() => void saveFollowUp(new Date(followUp).toISOString())}
+                >
+                  Set reminder
+                </button>
+                {selected.follow_up_at ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    disabled={busyId === selected.id}
+                    onClick={() => void saveFollowUp(null)}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
               <p className="dim" style={{ fontSize: "0.75rem" }}>
-                Reminder scheduling saves locally for now — notifications hook up next.
+                {selected.follow_up_at
+                  ? selected.follow_up_notified_at
+                    ? `Reminder sent ${new Date(selected.follow_up_notified_at).toLocaleString()}.`
+                    : `You'll get a notification on ${new Date(selected.follow_up_at).toLocaleString()} (plus email/WhatsApp if they're on).`
+                  : "Get a notification when it's time to follow up with this employer."}
               </p>
               <a href={selected.job.url} target="_blank" rel="noreferrer" className="btn btn-secondary">
                 Open JD

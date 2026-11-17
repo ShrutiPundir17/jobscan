@@ -255,6 +255,11 @@ class Application(Base, TimestampMixin):
     auto_apply_plan: Mapped[dict | None] = mapped_column(JSONB)
     auto_apply_error: Mapped[str | None] = mapped_column(Text)
     auto_apply_attempt: Mapped[str | None] = mapped_column(String(36))
+    # "Not interested": hidden from matches/review/counts, never re-surfaced by re-scoring.
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Follow-up reminder: a notification fires once at follow_up_at.
+    follow_up_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    follow_up_notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     auto_apply_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped["User"] = relationship(back_populates="applications")

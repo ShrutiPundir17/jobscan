@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, joinedload
 
@@ -21,6 +21,20 @@ router = APIRouter(prefix="/applications", tags=["applications"])
 class ApplicationUpdate(BaseModel):
     status: ApplicationStatus | None = None
     notes: str | None = Field(default=None, max_length=5000)
+    # Send null to clear. Naive datetimes are treated as UTC.
+    follow_up_at: datetime | None = None
+
+    @field_validator("follow_up_at")
+    @classmethod
+    def follow_up_in_range(cls, value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=UTC)
+        now = datetime.now(UTC)
+        if value < now - timedelta(days=1) or value > now + timedelta(days=366):
+            raise ValueError("Pick a reminder time within the next year")
+        return value
 
 
 class ApplicationResponse(BaseModel):
@@ -35,6 +49,8 @@ class ApplicationResponse(BaseModel):
     match_pitch: str | None = None
     tailored_resume_text: str | None = None
     notes: str | None = None
+    follow_up_at: datetime | None = None
+    follow_up_notified_at: datetime | None = None
     applied_at: datetime | None = None
     resume_id: UUID | None = None
     auto_apply_state: str | None = None
@@ -91,6 +107,8 @@ def _to_response(app: Application) -> ApplicationResponse:
         match_pitch=app.match_pitch,
         tailored_resume_text=app.tailored_resume_text,
         notes=app.notes,
+        follow_up_at=app.follow_up_at,
+        follow_up_notified_at=app.follow_up_notified_at,
         applied_at=app.applied_at,
         resume_id=app.resume_id,
         auto_apply_state=auto_apply.effective_state(app),
@@ -120,11 +138,14 @@ def list_applications(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     status_filter: ApplicationStatus | None = Query(default=None, alias="status"),
+    include_dismissed: bool = Query(default=False, description="Include matches marked 'not interested'"),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> ApplicationListResponse:
     """List tracked applications for the current user."""
     filters = [Application.user_id == current_user.id]
+    if not include_dismissed:
+        filters.append(Application.dismissed_at.is_(None))
     if status_filter is not None:
         filters.append(Application.status == status_filter)
 
@@ -175,7 +196,7 @@ def application_summary(
         s.value: int(n)
         for s, n in db.execute(
             select(Application.status, func.count())
-            .where(Application.user_id == current_user.id)
+            .where(Application.user_id == current_user.id, Application.dismissed_at.is_(None))
             .group_by(Application.status)
         ).all()
     }
@@ -287,6 +308,9 @@ def update_application(
     if "notes" in data:
         notes = data["notes"]
         app.notes = notes.strip() if isinstance(notes, str) and notes.strip() else None
+    if "follow_up_at" in data:
+        app.follow_up_at = data["follow_up_at"]
+        app.follow_up_notified_at = None  # a new (or cleared) time re-arms the reminder
     db.add(app)
     db.commit()
     db.refresh(app)

@@ -1,6 +1,8 @@
 from datetime import datetime
 from uuid import UUID
 
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import func, select
@@ -12,6 +14,7 @@ from app.models import Notification, User
 from app.services.notify_matches import send_test_notification
 
 router = APIRouter(prefix="/notifications", tags=["notifications"])
+logger = logging.getLogger(__name__)
 
 
 class NotificationResponse(BaseModel):
@@ -55,6 +58,16 @@ def list_notifications(
     offset: int = Query(default=0, ge=0),
 ) -> NotificationListResponse:
     """List notifications (new matches, status updates, reminders)."""
+    # Fire this user's due follow-up reminders now, so they show up even on
+    # hosts without a scheduler (Render free); delivery runs in the background.
+    try:
+        from app.services.reminders import fire_due_reminders
+        from app.tasks.notify_matches import queue_delivery
+
+        fire_due_reminders(db, user_id=current_user.id, deliver=queue_delivery)
+    except Exception:  # noqa: BLE001 — never break the notification list
+        db.rollback()
+        logger.exception("follow_up_reminders_failed user=%s", current_user.id)
     filters = [Notification.user_id == current_user.id]
     if unread_only:
         filters.append(Notification.read_at.is_(None))

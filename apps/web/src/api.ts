@@ -277,6 +277,12 @@ export const api = {
   async listAllMatches(max = 500) {
     return collectPages((offset) => api.listMatches({ limit: PAGE_SIZE, offset }), max);
   },
+  dismissMatch(id: string) {
+    return request<import("./types").PersistedMatch>(`/matches/${id}/dismiss`, { method: "POST" });
+  },
+  restoreMatch(id: string) {
+    return request<import("./types").PersistedMatch>(`/matches/${id}/restore`, { method: "POST" });
+  },
   getMatch(id: string) {
     return request<import("./types").PersistedMatch>(`/matches/${id}`);
   },
@@ -345,7 +351,7 @@ export const api = {
   },
   updateApplication(
     applicationId: string,
-    payload: { status?: string; notes?: string | null },
+    payload: { status?: string; notes?: string | null; follow_up_at?: string | null },
   ) {
     return request<import("./types").ApplicationItem>(
       `/applications/${applicationId}`,

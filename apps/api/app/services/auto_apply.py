@@ -425,6 +425,7 @@ def queue_auto_prepare(db: Session, user: User, application_ids: list[str]) -> i
             Application.user_id == user.id,
             Application.status == ApplicationStatus.pending_review,
             Application.auto_apply_state.is_(None),
+            Application.dismissed_at.is_(None),
         )
     ).all()
     queued = 0

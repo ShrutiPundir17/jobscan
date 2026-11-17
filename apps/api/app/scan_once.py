@@ -66,6 +66,21 @@ def embed_new_jobs() -> None:
             break
 
 
+def fire_reminders_now() -> int:
+    """All users' due reminders, delivered synchronously (this process is about to exit)."""
+    from app.services.notify_matches import deliver_notification
+    from app.services.reminders import fire_due_reminders
+
+    db = SessionLocal()
+    try:
+        return fire_due_reminders(db, deliver=lambda note_id: deliver_notification(db, note_id))
+    except Exception:  # noqa: BLE001 — a reminder problem must not fail the scan
+        logger.exception("follow_up_reminders_failed")
+        return 0
+    finally:
+        db.close()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one JobAgent job scan.")
     parser.add_argument("--keywords", help="Comma-separated roles (default: from users' preferences)")
@@ -79,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     logger.info("scan_once keywords=%s locations=%s", keywords, locations)
 
     result = run_scan_job(keywords, locations, after_scan=embed_new_jobs)
+    result["follow_up_reminders"] = fire_reminders_now()
     print(json.dumps(result, indent=2, default=str))
     return 1 if result.get("status") == "failed" else 0
 

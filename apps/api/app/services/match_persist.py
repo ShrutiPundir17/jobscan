@@ -39,6 +39,7 @@ def match_filters(user: User, *, status_filter: ApplicationStatus | None = None)
     filters = [
         Application.user_id == user.id,
         Application.match_score.is_not(None),
+        Application.dismissed_at.is_(None),
     ]
     if status_filter is not None:
         filters.append(Application.status == status_filter)
