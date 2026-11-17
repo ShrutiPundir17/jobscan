@@ -4,7 +4,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -25,12 +25,17 @@ from app.schemas.auth import (
     UserRegister,
     UserResponse,
 )
-from app.security import create_access_token, hash_password, verify_password
+from app.security import BCRYPT_MAX_BYTES, create_access_token, hash_password, verify_password
+from app.services import rate_limit as rl
 from app.services.google_auth import GoogleAuthError, google_oauth_configured, resolve_google_profile
 from app.services.notify_email import send_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
+
+# Unknown emails still pay for one bcrypt check, so response time doesn't
+# reveal which emails have accounts.
+_DUMMY_PASSWORD_HASH = hash_password(secrets.token_urlsafe(16))
 
 RESET_TOKEN_TTL = timedelta(hours=1)
 GENERIC_FORGOT_PASSWORD_MSG = (
@@ -104,8 +109,15 @@ def _try_send_whatsapp(
     return send_whatsapp(to_phone=phone, body=body, kind=kind, variables=variables)
 
 
+def _token_for(user: User) -> TokenResponse:
+    return TokenResponse(
+        access_token=create_access_token(subject=user.id, session_version=user.session_version or 0)
+    )
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
+def register(payload: UserRegister, request: Request, db: Session = Depends(get_db)) -> User:
+    rl.hit((rl.REGISTER_IP, rl.client_ip(request)), message="Too many sign-ups from this network.")
     email = payload.email.lower().strip()
     existing = db.scalar(select(User).where(User.email == email))
     if existing is not None:
@@ -126,17 +138,40 @@ def register(payload: UserRegister, db: Session = Depends(get_db)) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: UserLogin, db: Session = Depends(get_db)) -> TokenResponse:
+def login(payload: UserLogin, request: Request, db: Session = Depends(get_db)) -> TokenResponse:
     email = payload.email.lower().strip()
+    ip = rl.client_ip(request)
+    limits = (
+        (rl.LOGIN_FAIL_PAIR, f"{email}|{ip}"),
+        (rl.LOGIN_FAIL_IP, ip),
+        (rl.LOGIN_FAIL_EMAIL, email),
+    )
+    rl.enforce(*limits, message="Too many failed sign-in attempts.")
+
     user = db.scalar(select(User).where(User.email == email))
-    if user is None or not verify_password(payload.password, user.hashed_password):
+    password_ok = (
+        len(payload.password.encode("utf-8")) <= BCRYPT_MAX_BYTES
+        and verify_password(payload.password, user.hashed_password if user else _DUMMY_PASSWORD_HASH)
+    )
+    if user is None or not password_ok:
+        for rule, ident in limits:  # only failures count toward the limits
+            rl.record(rule, ident)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
         )
 
-    token = create_access_token(subject=user.id)
-    return TokenResponse(access_token=token)
+    rl.clear(rl.LOGIN_FAIL_PAIR, f"{email}|{ip}")
+    return _token_for(user)
+
+
+@router.post("/logout-all", response_model=dict)
+def logout_all(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Sign out on every device (revokes all existing tokens, including this one)."""
+    current_user.session_version = (current_user.session_version or 0) + 1
+    db.add(current_user)
+    db.commit()
+    return {"message": "Signed out on all devices."}
 
 
 @router.get("/me", response_model=UserResponse)
@@ -147,9 +182,16 @@ def me(current_user: User = Depends(get_current_user)) -> User:
 @router.post("/forgot-password", response_model=ForgotPasswordResponse)
 def forgot_password(
     payload: ForgotPasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> ForgotPasswordResponse:
     email = str(payload.email).lower().strip()
+    # Counted before the account lookup so a 429 never reveals whether it exists.
+    rl.hit(
+        (rl.FORGOT_TARGET, f"email:{email}"),
+        (rl.FORGOT_IP, rl.client_ip(request)),
+        message="Too many password reset requests.",
+    )
     user = db.scalar(select(User).where(User.email == email))
     if user is None:
         return ForgotPasswordResponse(message=GENERIC_FORGOT_PASSWORD_MSG)
@@ -238,8 +280,10 @@ def forgot_password(
 @router.post("/reset-password", response_model=dict)
 def reset_password(
     payload: ResetPasswordRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> dict:
+    rl.hit((rl.RESET_IP, rl.client_ip(request)), message="Too many reset attempts.")
     token_hash = _hash_token(payload.token.strip())
     row = db.scalar(
         select(PasswordResetToken).where(PasswordResetToken.token_hash == token_hash)
@@ -259,6 +303,8 @@ def reset_password(
         )
 
     user.hashed_password = hash_password(payload.new_password)
+    # Sign out everywhere: whoever had the old password loses their session too.
+    user.session_version = (user.session_version or 0) + 1
     row.used_at = now
     # Invalidate other unused tokens for this user.
     others = db.scalars(
@@ -277,9 +323,15 @@ def reset_password(
 @router.post("/forgot-username", response_model=ForgotUsernameResponse)
 def forgot_username(
     payload: ForgotUsernameRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> ForgotUsernameResponse:
     phone = payload.phone.strip()
+    rl.hit(
+        (rl.FORGOT_TARGET, f"phone:{_phone_digits(phone)[-10:]}"),
+        (rl.FORGOT_IP, rl.client_ip(request)),
+        message="Too many username recovery requests.",
+    )
     candidates = db.scalars(select(User).where(User.phone.is_not(None))).all()
     user = next((u for u in candidates if _phones_match(u.phone, phone)), None)
     if user is None:
@@ -345,9 +397,11 @@ def google_config() -> GoogleConfigResponse:
 @router.post("/google", response_model=TokenResponse)
 def google_login(
     payload: GoogleAuthRequest,
+    request: Request,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
     """Sign in or register with Google (GIS ID token or OAuth access token)."""
+    rl.hit((rl.GOOGLE_IP, rl.client_ip(request)), message="Too many sign-in attempts.")
     if not google_oauth_configured():
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -388,5 +442,4 @@ def google_login(
     else:
         logger.info("google_login email=%s", email)
 
-    token = create_access_token(subject=user.id)
-    return TokenResponse(access_token=token)
+    return _token_for(user)

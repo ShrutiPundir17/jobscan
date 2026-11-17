@@ -1,5 +1,5 @@
 import { FormEvent, useEffect, useState } from "react";
-import { api } from "./api";
+import { api, clearToken, SIGNED_OUT_EVENT } from "./api";
 import { TagInput } from "./components/TagInput";
 import type { UserProfile } from "./types";
 
@@ -163,6 +163,28 @@ export function PreferencesPage({ onMessage, onError }: Props) {
       <button type="submit" className="btn btn-primary" disabled={saving}>
         {saving ? "Saving…" : "Save preferences"}
       </button>
+
+      <div className="toggle-row" style={{ borderTop: "1px solid var(--border)", marginTop: "0.5rem" }}>
+        <span style={{ fontSize: "0.875rem", color: "var(--text-muted)" }}>
+          Lost a device or think someone else is signed in? This signs you out everywhere, including here.
+        </span>
+        <button
+          type="button"
+          className="btn btn-danger-ghost btn-sm"
+          onClick={() => {
+            if (!window.confirm("Sign out on all devices, including this one?")) return;
+            void api
+              .logoutAll()
+              .then(() => {
+                clearToken();
+                window.dispatchEvent(new Event(SIGNED_OUT_EVENT));
+              })
+              .catch((err) => onError(err instanceof Error ? err.message : "Could not sign out everywhere"));
+          }}
+        >
+          Log out of all devices
+        </button>
+      </div>
     </form>
   );
 }
