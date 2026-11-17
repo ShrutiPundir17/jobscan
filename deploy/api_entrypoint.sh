@@ -14,6 +14,12 @@ if [ -n "${DATABASE_URL:-}" ]; then
   esac
 fi
 
+# Explain misconfiguration (bad DATABASE_URL, REST URL in REDIS_URL, …) in plain
+# words in the deploy log, instead of failing later with a stack trace.
+if [ "${SKIP_PREFLIGHT:-0}" != "1" ]; then
+  python -m app.preflight
+fi
+
 # Ensure pgvector exists (Railway default Postgres may need this once).
 if [ "${RUN_MIGRATIONS:-1}" = "1" ] && [ -n "${DATABASE_URL:-}" ]; then
   echo "Ensuring pgvector extension..."
