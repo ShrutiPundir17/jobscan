@@ -113,6 +113,9 @@ def test_notification(
 
     Useful to verify channel setup. Does not require new job matches.
     """
+    from app.services import rate_limit
+
+    rate_limit.per_user(rate_limit.TEST_NOTIFY_USER, current_user.id, "Too many test alerts this hour.")
     result = send_test_notification(current_user.id)
     return TestNotificationResponse(**result)
 

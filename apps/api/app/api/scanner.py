@@ -10,7 +10,7 @@ from app.api.deps import get_current_user
 from app.config import settings
 from app.db import get_db
 from app.models import Application, Job, User
-from app.services import scan_guard
+from app.services import rate_limit, scan_guard
 from app.services.scan_status import read_scan_telemetry, record_scan_event
 from app.tasks.dispatch import dispatch
 from app.tasks.job_embeddings import embed_pending_jobs
@@ -246,6 +246,7 @@ def trigger_embed_jobs(
     current_user: User = Depends(get_current_user),
 ) -> TriggerResponse:
     """Manually enqueue embedding for jobs missing vectors (Stage 1)."""
+    rate_limit.per_user(rate_limit.EMBED_JOBS_USER, current_user.id, "Job embedding was triggered recently.")
     batch = body.batch_size if body else None
     async_result = dispatch(embed_pending_jobs, batch)
     return TriggerResponse(

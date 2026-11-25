@@ -14,7 +14,7 @@ from app.schemas.resumes import (
     ResumeListResponse,
     ResumeResponse,
 )
-from app.services import resume_admin
+from app.services import rate_limit, resume_admin
 from app.services.embeddings import embed_resume
 from app.services.resume_parser import parse_resume_text
 from app.services.resume_text import extract_resume_text
@@ -41,6 +41,7 @@ def upload_resume(
     db: Session = Depends(get_db),
 ) -> Resume:
     """Upload a resume file (PDF/DOCX), extract text, and store it."""
+    rate_limit.per_user(rate_limit.UPLOAD_USER, current_user.id, "Too many uploads this hour.")
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Filename is required")
 
@@ -158,6 +159,7 @@ def parse_resume(
 ) -> Resume:
     """Parse resume text with Gemini into structured JSON, then generate embedding."""
     resume = _get_user_resume(db, user_id=current_user.id, resume_id=resume_id)
+    rate_limit.per_user(rate_limit.PARSE_USER, current_user.id, "Too many resume parses this hour.")
     resume.parsed_data = parse_resume_text(resume.raw_text or "")
     db.add(resume)
     db.commit()
@@ -174,6 +176,7 @@ def generate_resume_embedding(
 ) -> Resume:
     """Generate / refresh vector embedding for a resume."""
     resume = _get_user_resume(db, user_id=current_user.id, resume_id=resume_id)
+    rate_limit.per_user(rate_limit.EMBED_USER, current_user.id, "Too many embedding requests this hour.")
     return embed_resume(db, resume)
 
 

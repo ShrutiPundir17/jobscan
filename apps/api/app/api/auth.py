@@ -1,4 +1,5 @@
 import hashlib
+import ipaddress
 import logging
 import re
 import secrets
@@ -107,6 +108,22 @@ def _try_send_whatsapp(
     from app.services.notify_whatsapp import send_whatsapp
 
     return send_whatsapp(to_phone=phone, body=body, kind=kind, variables=variables)
+
+
+def _dev_shortcuts_allowed(request: Request) -> bool:
+    """
+    Recovery shortcuts (showing a reset link / login email on screen) exist only
+    for local development: explicit development env, debug on, and the caller on
+    this machine or a private network. All three — a missing APP_ENV alone must
+    never turn them on for a public deployment.
+    """
+    if settings.app_env != "development" or not settings.debug:
+        return False
+    try:
+        ip = ipaddress.ip_address(rl.client_ip(request))
+    except ValueError:
+        return request.client is not None and request.client.host == "testclient"
+    return ip.is_loopback or ip.is_private
 
 
 def _token_for(user: User) -> TokenResponse:
@@ -245,8 +262,9 @@ def forgot_password(
             )
         )
 
-    # Local/dev when neither channel works — still let the owner continue.
-    if settings.app_env != "production":
+    # Local dev only, when neither channel works: show the link so the developer can continue.
+    # Never on a real deployment — anyone could reset any account by email.
+    if _dev_shortcuts_allowed(request):
         logger.info(
             "forgot_password falling back to inline token email=%s email_status=%s wa_status=%s",
             email,
@@ -374,17 +392,18 @@ def forgot_username(
             message="If an account matches that phone number, we sent your login email."
         )
 
-    # Matched phone but no outbound channel — show email so recovery still works.
-    logger.info(
-        "forgot_username inline fallback user=%s wa=%s email=%s",
-        user.id,
-        wa_status,
-        email_status,
+    # Matched phone but no outbound channel. Showing the email here would let anyone
+    # harvest users' emails by trying phone numbers, so only local dev gets it.
+    if _dev_shortcuts_allowed(request):
+        logger.info("forgot_username dev inline fallback user=%s", user.id)
+        return ForgotUsernameResponse(
+            message="Matched your phone. Your login email is shown below (local development only).",
+            login_email=user.email,
+        )
+    logger.warning(
+        "forgot_username delivery failed user=%s wa=%s email=%s", user.id, wa_status, email_status
     )
-    return ForgotUsernameResponse(
-        message="Matched your phone. Your login email is shown below.",
-        login_email=user.email,
-    )
+    return ForgotUsernameResponse(message=GENERIC_FORGOT_USERNAME_MSG)
 
 
 @router.get("/google/config", response_model=GoogleConfigResponse)

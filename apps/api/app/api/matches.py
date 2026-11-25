@@ -25,6 +25,7 @@ from app.services.match_persist import (
     serialize_skill_gaps,
 )
 from app.services.auto_apply import effective_error, effective_state, guard_manual_change
+from app.services import rate_limit as rl
 from app.services.match_score import deep_score_matches
 from app.services.match_search import resolve_resume_for_match, search_similar_jobs
 from app.services.resume_tailor import tailor_application_resume
@@ -106,6 +107,7 @@ def score_matches(
     Returns LLM score (0–100), verdict, reasoning, skill gaps, and a tailored pitch.
     Persists applications at/above min_match_score when persist=true.
     """
+    rl.per_user(rl.SCORE_USER, current_user.id, "You've run Find matches a lot this hour.")
     resume, threshold, results = deep_score_matches(
         db,
         current_user,
@@ -179,6 +181,7 @@ def tailor_match_resume(
 
     Saves tailored_bullets + tailored_resume_text on the application.
     """
+    rl.per_user(rl.TAILOR_USER, current_user.id, "Too many tailoring requests this hour.")
     app = tailor_application_resume(db, current_user, application_id)
     return TailorResumeResponse(
         application_id=app.id,

@@ -36,6 +36,20 @@ FORGOT_IP = Limit("forgot-ip", 10, 60 * 60)
 RESET_IP = Limit("reset-ip", 20, 60 * 60)
 REGISTER_IP = Limit("register-ip", 10, 60 * 60)
 GOOGLE_IP = Limit("google-ip", 30, 10 * 60)
+# Per-user caps on endpoints that cost money (Gemini calls, email/WhatsApp).
+# Generous for real use; they stop scripts and runaway clicking.
+SCORE_USER = Limit("score-user", 10, 60 * 60)  # each run = up to ~15 Gemini calls
+TAILOR_USER = Limit("tailor-user", 40, 60 * 60)
+PARSE_USER = Limit("parse-user", 15, 60 * 60)
+EMBED_USER = Limit("embed-user", 30, 60 * 60)
+UPLOAD_USER = Limit("upload-user", 20, 60 * 60)
+EMBED_JOBS_USER = Limit("embed-jobs-user", 5, 60 * 60)
+TEST_NOTIFY_USER = Limit("test-notify-user", 5, 60 * 60)
+
+
+def per_user(rule: Limit, user_id: object, message: str) -> None:
+    """Count one use of a costly endpoint by this user; 429 once over the cap."""
+    hit((rule, f"user:{user_id}"), message=message)
 
 
 def client_ip(request: Request) -> str:
