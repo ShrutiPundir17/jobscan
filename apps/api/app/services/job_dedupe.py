@@ -28,6 +28,12 @@ def normalize_job_url(url: str) -> str:
     return urlunparse((scheme, host, path, "", "", ""))
 
 
+def is_web_url(url: str) -> bool:
+    """True only for http(s) URLs with a host (rejects javascript:, data:, mailto:, relative paths)."""
+    parsed = urlparse(url or "")
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
 def url_fingerprint(url: str) -> str:
     normalized = normalize_job_url(url)
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()

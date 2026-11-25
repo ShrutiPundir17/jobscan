@@ -96,8 +96,13 @@ def main() -> int:
     warnings = check_redis(os.environ.get("REDIS_URL", settings.redis_url))
     if not settings.google_api_key:
         warnings.append("GOOGLE_API_KEY is empty — resume parsing and matching will fail until it is set.")
-    if settings.app_env == "production" and settings.jwt_secret_key.startswith("change-me"):
-        warnings.append("JWT_SECRET_KEY is the development default — set a long random value.")
+    if settings.app_env == "production" and (
+        settings.jwt_secret_key.startswith("change-me") or len(settings.jwt_secret_key) < 32
+    ):
+        # The default is public (it's in the repo): anyone could forge a login as any user.
+        fatal.append("JWT_SECRET_KEY is missing, the public default, or too short — set a random value of 32+ characters.")
+    if settings.app_env != "production":
+        warnings.append(f"APP_ENV is '{settings.app_env}' — set APP_ENV=production on a public deployment.")
 
     for w in warnings:
         print(f"PREFLIGHT WARNING: {w}", flush=True)

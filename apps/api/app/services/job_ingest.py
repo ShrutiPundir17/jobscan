@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.models import Job
 from app.services.embeddings import clear_job_embedding
 from app.services.job_dedupe import (
+    is_web_url,
     dedupe_scraped_jobs,
     extract_external_id,
     normalize_job_url,
@@ -44,6 +45,11 @@ def upsert_scraped_jobs(db: Session, jobs: list[Any]) -> dict[str, int]:
             continue
 
         url = normalize_job_url(raw_url)
+        # Only real web links: a scraped "javascript:" or hostless href must never
+        # reach the database, the dashboard's links or notification emails.
+        if not is_web_url(url):
+            skipped += 1
+            continue
         external_id = extract_external_id(source, url, getattr(job, "external_id", None))
         fingerprint = url_fingerprint(url)
 

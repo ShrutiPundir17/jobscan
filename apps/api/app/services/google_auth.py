@@ -46,13 +46,50 @@ def verify_google_id_token(token: str) -> dict[str, Any]:
         raise GoogleAuthError("Invalid Google token issuer.")
     if not claims.get("email"):
         raise GoogleAuthError("Google account did not return an email.")
-    if claims.get("email_verified") is False:
+    if not _is_verified(claims.get("email_verified")):
         raise GoogleAuthError("Google email is not verified.")
     return claims
 
 
+def _is_verified(value: Any) -> bool:
+    # Logging someone in by email requires Google to *say* it's verified;
+    # a missing flag is not good enough (Google returns it as bool or "true").
+    return value is True or str(value).lower() == "true"
+
+
+def verify_access_token_audience(access_token: str) -> dict[str, Any]:
+    """
+    Check the access token was issued to *this* app. Without this, a token a
+    victim granted to any other site could be replayed here to sign in as them
+    (OAuth token substitution).
+    """
+    client_id = (settings.google_oauth_client_id or "").strip()
+    try:
+        resp = requests.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"access_token": access_token},
+            timeout=15,
+        )
+    except requests.RequestException as exc:
+        logger.warning("google_tokeninfo_failed err=%s", type(exc).__name__)
+        raise GoogleAuthError("Could not reach Google to verify sign-in.") from exc
+    if resp.status_code >= 400:
+        raise GoogleAuthError("Invalid Google access token.")
+    info = resp.json()
+    if client_id not in {info.get("aud"), info.get("azp")}:
+        logger.warning("google_token_wrong_audience aud=%s", info.get("aud"))
+        raise GoogleAuthError("This Google sign-in was not issued for JobAgent.")
+    try:
+        if int(info.get("expires_in", 0)) <= 0:
+            raise GoogleAuthError("Google sign-in expired. Try again.")
+    except (TypeError, ValueError) as exc:
+        raise GoogleAuthError("Invalid Google access token.") from exc
+    return info
+
+
 def fetch_google_userinfo(access_token: str) -> dict[str, Any]:
-    """Resolve profile from a Google OAuth access token."""
+    """Resolve profile from a Google OAuth access token (after its audience is checked)."""
+    token_info = verify_access_token_audience(access_token)
     try:
         resp = requests.get(
             "https://www.googleapis.com/oauth2/v3/userinfo",
@@ -64,13 +101,16 @@ def fetch_google_userinfo(access_token: str) -> dict[str, Any]:
         raise GoogleAuthError("Could not reach Google to verify sign-in.") from exc
 
     if resp.status_code >= 400:
-        logger.warning("google_userinfo_http status=%s body=%s", resp.status_code, resp.text[:200])
+        logger.warning("google_userinfo_http status=%s", resp.status_code)
         raise GoogleAuthError("Invalid Google access token.")
 
     data = resp.json()
     if not data.get("email"):
         raise GoogleAuthError("Google account did not return an email.")
-    if data.get("email_verified") is False or data.get("verified_email") is False:
+    # The profile must belong to the same Google account the token was issued for.
+    if token_info.get("sub") and data.get("sub") and token_info["sub"] != data["sub"]:
+        raise GoogleAuthError("Invalid Google access token.")
+    if not _is_verified(data.get("email_verified", data.get("verified_email"))):
         raise GoogleAuthError("Google email is not verified.")
     return data
 
